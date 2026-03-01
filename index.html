@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>班級管理系統 V24.6.0 Cloud</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Nunito', 'Noto Sans TC', sans-serif; background: #f8fafc; min-height: 100vh; overflow: hidden; }
+        .bubble-card { backdrop-filter: blur(8px); border-radius: 2rem; border: 1px solid rgba(255, 255, 255, 0.5); transition: 0.3s; }
+        .bubble-pink { background: #fee2e2; } .bubble-blue { background: #e0f2fe; }
+        .bubble-green { background: #dcfce7; } .bubble-purple { background: #f3e8ff; }
+        .bubble-orange { background: #ffedd5; }
+        .student-card { transition: 0.2s; cursor: pointer; border-radius: 1.25rem; background: white; border: 1px solid #e2e8f0; position: relative; }
+        .student-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border-color: #cbd5e1; }
+        .admin-controls { position: absolute; top: 0.4rem; right: 0.4rem; display: none; flex-direction: column; gap: 4px; z-index: 50; }
+        body.admin-mode .admin-controls { display: flex; }
+        .hidden-view { display: none !important; }
+        #toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: #334155; color: white; padding: 10px 20px; border-radius: 12px; z-index: 1000; opacity: 0; transition: 0.3s; pointer-events: none; font-size: 14px; }
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .report-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; margin: 0 4px 4px 0; }
+        .tag-plus { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+        .tag-minus { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        /* 載入中遮罩 */
+        #loadingOverlay { position: fixed; inset: 0; background: rgba(255,255,255,0.8); z-index: 9999; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #6366f1; }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+
+    <div id="loadingOverlay">☁️ 雲端資料同步中...</div>
+    <div id="toast">操作成功</div>
+
+    <header class="bg-white/90 border-b border-slate-200 px-8 py-4 flex justify-between items-center z-[60]">
+        <div class="flex items-center gap-4">
+            <h1 class="text-xl font-black text-slate-800 tracking-tight">CLASS MANAGER <span class="text-[10px] text-indigo-500 font-bold ml-1">CLOUD V1</span></h1>
+            <div id="navBreadcrumb" class="hidden text-slate-400 font-bold flex items-center gap-2 text-sm">
+                <span>/</span><span id="breadcrumbClass" class="text-slate-600"></span>
+            </div>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="syncFromCloud()" class="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl font-bold text-xs hover:bg-emerald-100 transition">🔄 重新整理</button>
+            <button onclick="toggleAdminMode()" id="adminToggleBtn" class="bg-slate-100 text-slate-600 px-4 py-2 rounded-xl font-bold text-xs">🔒 小老師模式</button>
+            <button onclick="openBehaviorSettings()" id="settingsBtn" class="hidden bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-xs shadow-lg">項目設定</button>
+        </div>
+    </header>
+
+    <section id="viewHub" class="flex-1 overflow-y-auto p-10">
+        <div class="max-w-5xl mx-auto">
+            <div class="flex justify-between items-end mb-10">
+                <h2 class="text-3xl font-black text-slate-800">班級大廳</h2>
+                <button id="addClassBtn" onclick="openModal('classModal')" class="hidden bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-sm">＋ 建立班級</button>
+            </div>
+            <div id="classGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"></div>
+        </div>
+    </section>
+
+    <section id="viewClassroom" class="flex-1 overflow-y-auto p-6 hidden-view">
+        <div class="max-w-7xl mx-auto">
+            <div class="flex justify-between items-center mb-6">
+                <button onclick="showHub()" class="text-slate-500 font-bold text-sm flex items-center gap-1">← 返回大廳</button>
+                <div class="flex gap-2">
+                    <button id="addStudentBtn" onclick="openModal('singleStudentModal')" class="hidden bg-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold text-xs">＋ 學生</button>
+                    <button onclick="openSummary()" class="bg-indigo-600 text-white px-5 py-2 rounded-xl font-bold text-xs shadow-md">📊 結算統計</button>
+                </div>
+            </div>
+            <div id="studentGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4 pb-20"></div>
+        </div>
+    </section>
+
+    <div id="passwordModal" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center z-[200] backdrop-blur-sm">
+        <div class="bg-white p-8 rounded-[2.5rem] w-full max-w-xs shadow-2xl text-center">
+            <h3 id="pwTitle" class="text-lg font-black mb-4">身份驗證</h3>
+            <input type="password" id="pwInput" placeholder="請輸入密碼" class="w-full bg-slate-50 p-4 rounded-2xl mb-4 text-center font-bold outline-none border-2 border-transparent focus:border-indigo-500 transition-all">
+            <div class="flex gap-2">
+                <button onclick="closeModal('passwordModal')" class="flex-1 py-3 text-slate-400 font-bold text-sm">取消</button>
+                <button id="pwConfirmBtn" class="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-2xl text-sm">確認</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="summaryModal" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center z-[110] backdrop-blur-sm">
+        <div class="bg-white p-6 rounded-[2.5rem] w-full max-w-4xl mx-4 shadow-2xl max-h-[85vh] flex flex-col">
+            <div class="flex justify-between items-center mb-6 px-2">
+                <h3 class="text-2xl font-black text-slate-800">班級結算報表</h3>
+                <button onclick="copySummaryReport()" class="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-xs">📋 複製報表文本</button>
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scroll border border-slate-100 rounded-3xl">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 sticky top-0 font-bold text-slate-500">
+                        <tr><th class="p-4 text-center">#</th><th class="p-4">學生姓名</th><th class="p-4 text-center">當前得分</th><th class="p-4">表現紀錄</th></tr>
+                    </thead>
+                    <tbody id="summaryTableBody" class="divide-y divide-slate-50"></tbody>
+                </table>
+            </div>
+            <button onclick="closeModal('summaryModal')" class="w-full mt-6 py-4 bg-slate-100 text-slate-600 font-bold rounded-2xl text-sm">關閉統計</button>
+        </div>
+    </div>
+
+    <div id="studentModal" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center z-[100] backdrop-blur-sm">
+        <div class="bg-white p-6 rounded-[2.5rem] shadow-2xl w-full max-w-2xl flex flex-col md:flex-row gap-8 mx-4">
+            <div class="flex-1">
+                <div class="flex items-center gap-5 mb-8">
+                    <div id="modalAvatar" class="text-6xl bg-slate-50 w-20 h-20 flex items-center justify-center rounded-3xl"></div>
+                    <div>
+                        <h3 id="modalStudentName" class="text-3xl font-black text-slate-800"></h3>
+                        <p class="text-slate-400 font-bold text-xs mt-1 uppercase">Student Profile</p>
+                    </div>
+                </div>
+                <div id="behaviorGrid" class="grid grid-cols-2 gap-3"></div>
+                <button onclick="closeModal('studentModal')" class="w-full mt-8 py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl">儲存並離開</button>
+            </div>
+            <div class="w-full md:w-72 border-l border-slate-100 pl-8 hidden md:block">
+                <p class="text-[10px] font-black text-slate-400 mb-4 uppercase">近期登記紀錄</p>
+                <div id="historyList" class="space-y-3 max-h-72 overflow-y-auto text-[11px] custom-scroll pr-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="classModal" class="fixed inset-0 bg-slate-900/40 hidden items-center justify-center z-[100]">
+        <div class="bg-white p-8 rounded-[2rem] w-full max-w-xs shadow-2xl">
+            <h3 class="font-black mb-6 text-center text-xl">建立新班級</h3>
+            <input type="text" id="newClassName" placeholder="例如：101班" class="w-full bg-slate-50 p-4 rounded-2xl mb-3 outline-none border border-transparent focus:border-indigo-400 transition">
+            <input type="number" id="studentCount" placeholder="預設學生人數" class="w-full bg-slate-50 p-4 rounded-2xl mb-6 outline-none text-center">
+            <button onclick="submitNewClass()" class="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-lg">建立班級</button>
+        </div>
+    </div>
+
+    <div id="singleStudentModal" class="fixed inset-0 bg-slate-900/40 hidden items-center justify-center z-[110]">
+        <div class="bg-white p-8 rounded-[2rem] w-full max-w-xs shadow-2xl text-center">
+            <h3 class="font-black mb-6 text-xl">加入新成員</h3>
+            <input type="text" id="singleStudentName" placeholder="學生姓名" class="w-full bg-slate-50 p-4 rounded-2xl mb-6 outline-none text-center font-bold">
+            <button onclick="addSingleStudent()" class="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-lg">加入名單</button>
+        </div>
+    </div>
+
+    <div id="behaviorModal" class="fixed inset-0 bg-slate-900/40 hidden items-center justify-center z-[110]">
+        <div class="bg-white p-8 rounded-[2rem] w-full max-w-sm shadow-2xl">
+            <h3 class="font-black mb-6 text-xl">加減分項目設定</h3>
+            <div id="bhManagerList" class="space-y-2 mb-6 max-h-56 overflow-y-auto custom-scroll pr-2"></div>
+            <div class="bg-slate-50 p-4 rounded-2xl">
+                <div class="flex gap-2 mb-3">
+                    <input type="text" id="newBHName" placeholder="項目名稱" class="flex-1 p-3 bg-white rounded-xl text-sm border-none shadow-sm">
+                    <input type="number" id="newBHPoint" value="-1" class="w-16 p-3 bg-white rounded-xl text-sm text-center font-bold">
+                </div>
+                <button onclick="addNewBH()" class="w-full bg-indigo-600 text-white py-3 rounded-xl text-sm font-bold shadow-md">新增加減分項目</button>
+            </div>
+            <button onclick="closeModal('behaviorModal')" class="w-full mt-6 text-slate-400 text-[10px] text-center uppercase tracking-widest font-bold">關閉設定</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 核心同步設定 ---
+        const API_URL = "YOUR_GAS_URL_HERE"; https://script.google.com/macros/s/AKfycbw1SznOv1qKvxQp_BO-nnXjrPxgRJipoAmtyz2yf5aRy6zremJIB8OmJ17naY7hw3fV/exec
+
+        const ANIMALS = ['🦁','🐯','🦒','🦊','🐨','🐼','🐻','🐰','🐹','🐭','🐸','🐧','🐦','🐤','🦉','🦄','🐴','🐮','🐷','🐙','🦆','🐢','🐊','🐍','🐳','🐬','🐶','🐠','🦀','🦋','🐝','🐞','🐿️','🦍','🐘','🦏','🐪','🦓','🦘','🐶'];
+        const COLORS = ['bubble-pink', 'bubble-blue', 'bubble-green', 'bubble-purple', 'bubble-orange'];
+
+        let db = {};
+        let behaviors = [];
+        let currentClass = "", currentStudentIdx = -1, isAdmin = false;
+
+        // 從雲端讀取
+        async function syncFromCloud() {
+            document.getElementById('loadingOverlay').style.display = 'flex';
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
+                db = data.db || {};
+                behaviors = data.behaviors.length ? data.behaviors : [
+                    { name: "勇於發言", point: 1 }, { name: "熱心助人", point: 1 }, { name: "未帶課本", point: -1 }, { name: "干擾秩序", point: -1 }
+                ];
+                renderHub();
+                if(currentClass) renderClassroom();
+                showToast("☁️ 資料已同步");
+            } catch (e) {
+                showToast("❌ 同步失敗，請檢查網路");
+                console.error(e);
+            } finally {
+                document.getElementById('loadingOverlay').style.display = 'none';
+            }
+        }
+
+        // 存入雲端
+        async function saveToCloud() {
+            showToast("⏳ 雲端儲存中...");
+            try {
+                await fetch(API_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ db, behaviors })
+                });
+                showToast("✅ 已儲存至雲端");
+            } catch (e) {
+                showToast("❌ 儲存失敗");
+            }
+        }
+
+        const saveDB = () => saveToCloud();
+        const saveBehaviors = () => saveToCloud();
+
+        // UI 助手
+        const openModal = (id) => { document.getElementById(id).classList.replace('hidden', 'flex'); };
+        const closeModal = (id) => { document.getElementById(id).classList.replace('flex', 'hidden'); };
+        const showToast = (msg) => { const t = document.getElementById('toast'); t.innerText = msg; t.style.opacity = "1"; setTimeout(() => t.style.opacity = "0", 1500); };
+
+        // 權限系統
+        function toggleAdminMode() {
+            if (!isAdmin) {
+                document.getElementById('pwTitle').innerText = "進入管理權限";
+                document.getElementById('pwInput').value = "";
+                openModal('passwordModal');
+                document.getElementById('pwConfirmBtn').onclick = () => {
+                    if (document.getElementById('pwInput').value === "admin") {
+                        isAdmin = true; applyMode(); closeModal('passwordModal'); showToast("🔓 老師權限已開啟");
+                    } else { alert("驗證密碼錯誤"); }
+                };
+            } else { isAdmin = false; applyMode(); showToast("🔒 已恢復小老師模式"); }
+        }
+
+        function applyMode() {
+            document.body.classList.toggle('admin-mode', isAdmin);
+            document.getElementById('adminToggleBtn').innerText = isAdmin ? "🔓 老師模式" : "🔒 小老師模式";
+            ['settingsBtn', 'addClassBtn', 'addStudentBtn'].forEach(id => {
+                const el = document.getElementById(id);
+                if(el) el.classList.toggle('hidden', !isAdmin);
+            });
+            renderHub(); if(currentClass) renderClassroom();
+        }
+
+        // 班級管理
+        function checkClassPassword(name) {
+            if (isAdmin) return enterClass(name);
+            document.getElementById('pwTitle').innerText = `${name} 登入`;
+            document.getElementById('pwInput').value = "";
+            openModal('passwordModal');
+            document.getElementById('pwConfirmBtn').onclick = () => {
+                if (document.getElementById('pwInput').value === "shes" + name) {
+                    closeModal('passwordModal'); enterClass(name);
+                } else { alert("密碼錯誤"); }
+            };
+        }
+
+        function enterClass(name) {
+            currentClass = name;
+            document.getElementById('viewHub').classList.add('hidden-view');
+            document.getElementById('viewClassroom').classList.remove('hidden-view');
+            document.getElementById('breadcrumbClass').innerText = name;
+            document.getElementById('navBreadcrumb').classList.remove('hidden');
+            renderClassroom();
+        }
+
+        function showHub() {
+            currentClass = "";
+            document.getElementById('viewClassroom').classList.add('hidden-view');
+            document.getElementById('viewHub').classList.remove('hidden-view');
+            document.getElementById('navBreadcrumb').classList.add('hidden');
+            renderHub();
+        }
+
+        // 渲染功能
+        function renderHub() {
+            const grid = document.getElementById('classGrid');
+            grid.innerHTML = Object.keys(db).map((name, i) => `
+                <div onclick="checkClassPassword('${name}')" class="bubble-card ${COLORS[i % COLORS.length]} p-8 cursor-pointer relative group shadow-sm hover:shadow-xl transition-all">
+                    <h3 class="text-2xl font-black text-slate-800">${name}</h3>
+                    <p class="text-xs text-slate-500 font-bold mt-2 uppercase tracking-widest">${db[name].length} Students</p>
+                    ${isAdmin ? `<button onclick="event.stopPropagation(); deleteClass('${name}')" class="absolute top-6 right-6 text-slate-400 hover:text-red-500">✕</button>` : ''}
+                </div>
+            `).join('') || `<div class="col-span-full py-20 text-center text-slate-300 font-bold border-2 border-dashed border-slate-100 rounded-[3rem]">請由老師模式建立班級</div>`;
+        }
+
+        function renderClassroom() {
+            const grid = document.getElementById('studentGrid');
+            grid.innerHTML = db[currentClass].map((s, idx) => {
+                const total = s.logs.reduce((sum, l) => sum + (l.point || 0), 0);
+                const scoreColor = total > 0 ? 'text-emerald-500' : (total < 0 ? 'text-red-500' : 'text-slate-300');
+                return `
+                    <div onclick="openStudentModal(${idx})" class="student-card p-5 pt-7 flex flex-col items-center">
+                        <span class="absolute top-3 left-3 text-[10px] text-slate-200 font-black">${idx + 1}</span>
+                        <div class="admin-controls">
+                            <button onclick="event.stopPropagation(); moveStudent(${idx}, -1)" class="w-6 h-6 bg-white border border-slate-100 rounded-lg text-[10px]">▲</button>
+                            <button onclick="event.stopPropagation(); moveStudent(${idx}, 1)" class="w-6 h-6 bg-white border border-slate-100 rounded-lg text-[10px]">▼</button>
+                            <button onclick="event.stopPropagation(); renameStudent(${idx})" class="w-6 h-6 bg-white border border-slate-100 rounded-lg text-[10px] text-indigo-500">✎</button>
+                            <button onclick="event.stopPropagation(); deleteStudent(${idx})" class="w-6 h-6 bg-white border border-slate-100 rounded-lg text-[10px] text-red-400">✕</button>
+                        </div>
+                        <div class="text-4xl mb-2">${ANIMALS[idx % ANIMALS.length]}</div>
+                        <div class="font-bold text-slate-700 text-sm truncate w-full text-center">${s.name}</div>
+                        <div class="mt-2 font-black text-xs ${scoreColor}">${total > 0 ? '+' : ''}${total}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function openStudentModal(idx) {
+            currentStudentIdx = idx; const s = db[currentClass][idx];
+            document.getElementById('modalAvatar').innerText = ANIMALS[idx % ANIMALS.length];
+            document.getElementById('modalStudentName').innerText = s.name;
+            document.getElementById('behaviorGrid').innerHTML = behaviors.map(b => `
+                <button onclick="addLog('${b.name}', ${b.point})" class="p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-white hover:border-indigo-400 transition-all text-left">
+                    <p class="text-xs font-black text-slate-600">${b.name}</p>
+                    <p class="${b.point >= 0 ? 'text-emerald-500' : 'text-red-400'} text-[10px] font-black mt-1">${b.point > 0 ? '+' : ''}${b.point}</p>
+                </button>
+            `).join('');
+            updateHistoryUI(); openModal('studentModal');
+        }
+
+        function addLog(name, point) {
+            const s = db[currentClass][currentStudentIdx];
+            const now = new Date();
+            const timeStr = `${now.getMonth() + 1}/${now.getDate()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+            s.logs.push({ name, point, time: timeStr });
+            saveDB(); renderClassroom(); updateHistoryUI();
+        }
+
+        function updateHistoryUI() {
+            const logs = db[currentClass][currentStudentIdx].logs;
+            document.getElementById('historyList').innerHTML = logs.map((l, originalIdx) => ({...l, originalIdx})).reverse().map(l => `
+                <div class="flex justify-between items-center py-3 border-b border-slate-50">
+                    <div class="flex flex-col">
+                        <span class="font-bold text-slate-700 text-xs">${l.name} <span class="${l.point > 0 ? 'text-emerald-500' : 'text-red-400'}">(${l.point > 0 ? '+' : ''}${l.point})</span></span>
+                        <span class="text-slate-300 text-[9px] font-black">${l.time}</span>
+                    </div>
+                    ${isAdmin ? `<button onclick="deleteLog(${l.originalIdx})" class="text-red-300 hover:text-red-500">✕</button>` : ''}
+                </div>
+            `).join('') || "<div class='text-slate-300 italic text-center py-10 text-[10px]'>尚無紀錄</div>";
+        }
+
+        function deleteLog(logIdx) {
+            if(confirm("確定要刪除這筆登記嗎？")) {
+                db[currentClass][currentStudentIdx].logs.splice(logIdx, 1);
+                saveDB(); renderClassroom(); updateHistoryUI();
+            }
+        }
+
+        // 結算與管理 (保持原邏輯但呼叫新 saveDB)
+        function openSummary() {
+            const tbody = document.getElementById('summaryTableBody');
+            tbody.innerHTML = db[currentClass].map((s, idx) => {
+                const total = s.logs.reduce((a, b) => a + (b.point || 0), 0);
+                const stats = {};
+                s.logs.forEach(log => { stats[log.name] = (stats[log.name] || 0) + 1; });
+                let detail = Object.keys(stats).map(k => {
+                    const bh = behaviors.find(b => b.name === k);
+                    return `<span class="report-tag ${(bh?.point||0) >= 0 ? 'tag-plus' : 'tag-minus'}">${k} x${stats[k]}</span>`;
+                }).join('');
+                return `<tr><td class="p-4 text-center text-slate-400 font-black">${idx+1}</td><td class="p-4 font-black">${s.name}</td><td class="p-4 text-center font-black ${total >= 0 ? 'text-emerald-500' : 'text-red-500'}">${total}</td><td class="p-4">${detail}</td></tr>`;
+            }).join('');
+            openModal('summaryModal');
+        }
+
+        function copySummaryReport() {
+            let txt = `【${currentClass} 班級結算】\n`;
+            db[currentClass].forEach((s, i) => {
+                const total = s.logs.reduce((a, b) => a + (b.point || 0), 0);
+                txt += `${i+1}. ${s.name}: ${total}分\n`;
+            });
+            navigator.clipboard.writeText(txt).then(() => showToast("📋 報表已複製"));
+        }
+
+        function submitNewClass() {
+            const n = document.getElementById('newClassName').value.trim();
+            const c = parseInt(document.getElementById('studentCount').value) || 0;
+            if(n) {
+                db[n] = Array.from({length: c}, (_, i) => ({name: `學生 ${i+1}`, logs: []}));
+                saveDB(); renderHub(); closeModal('classModal');
+            }
+        }
+        function deleteClass(n) { if(confirm(`確定刪除 ${n}？`)) { delete db[n]; saveDB(); renderHub(); } }
+        function addSingleStudent() {
+            const n = document.getElementById('singleStudentName').value.trim();
+            if(n) { db[currentClass].push({name: n, logs: []}); saveDB(); renderClassroom(); closeModal('singleStudentModal'); }
+        }
+        function deleteStudent(i) { if(confirm("確定刪除？")) { db[currentClass].splice(i, 1); saveDB(); renderClassroom(); } }
+        function renameStudent(i) { 
+            const n = prompt("新姓名：", db[currentClass][i].name); 
+            if(n) { db[currentClass][i].name = n; saveDB(); renderClassroom(); } 
+        }
+        function moveStudent(idx, direction) {
+            const targetIdx = idx + direction;
+            if (targetIdx < 0 || targetIdx >= db[currentClass].length) return;
+            const temp = db[currentClass][idx];
+            db[currentClass][idx] = db[currentClass][targetIdx];
+            db[currentClass][targetIdx] = temp;
+            saveDB(); renderClassroom();
+        }
+        function openBehaviorSettings() { renderBHManager(); openModal('behaviorModal'); }
+        function renderBHManager() {
+            document.getElementById('bhManagerList').innerHTML = behaviors.map((b, i) => `
+                <div class="flex justify-between items-center bg-slate-50 p-3 rounded-xl mb-1">
+                    <span class="text-xs font-bold">${b.name} (${b.point})</span>
+                    <button onclick="behaviors.splice(${i}, 1); saveBehaviors(); renderBHManager();" class="text-red-400">✕</button>
+                </div>
+            `).join('');
+        }
+        function addNewBH() {
+            const n = document.getElementById('newBHName').value.trim();
+            const p = parseInt(document.getElementById('newBHPoint').value);
+            if(n && !isNaN(p)) { behaviors.push({ name: n, point: p }); saveBehaviors(); renderBHManager(); }
+        }
+
+        // 初始啟動
+        syncFromCloud();
+    </script>
+</body>
+</html>
