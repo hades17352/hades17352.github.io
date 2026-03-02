@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>班級管理系統 Pro - 雲端協作版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Nunito', 'Noto Sans TC', sans-serif; background: #f8fafc; min-height: 100vh; overflow: hidden; }
+        .bubble-card { backdrop-filter: blur(8px); border-radius: 2rem; border: 1px solid rgba(255, 255, 255, 0.5); transition: 0.3s; }
+        .student-card { transition: 0.2s; cursor: pointer; border-radius: 1.25rem; background: white; border: 1px solid #e2e8f0; position: relative; }
+        .student-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .hidden-view { display: none !important; }
+        #toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: #334155; color: white; padding: 10px 20px; border-radius: 12px; z-index: 1000; opacity: 0; transition: 0.3s; pointer-events: none; }
+        #loadingOverlay { position: fixed; inset: 0; background: rgba(255,255,255,0.8); z-index: 9999; display: none; align-items: center; justify-content: center; font-weight: bold; color: #6366f1; }
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+
+    <div id="loadingOverlay">☁️ 雲端同步中...</div>
+    <div id="toast">操作成功</div>
+
+    <header class="bg-white border-b px-8 py-4 flex justify-between items-center z-[60]">
+        <div class="flex items-center gap-4">
+            <h1 class="text-xl font-black text-slate-800">CLASS MANAGER</h1>
+            <div id="navBreadcrumb" class="hidden text-slate-400 font-bold flex items-center gap-2 text-sm">
+                <span>/</span><span id="breadcrumbClass" class="text-slate-600"></span>
+            </div>
+        </div>
+        <div class="flex gap-2">
+            <button id="loginBtn" onclick="handleLogin()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs">老師登入</button>
+            <button id="assistantBtn" onclick="openAssistantMode()" class="bg-amber-100 text-amber-700 px-4 py-2 rounded-xl font-bold text-xs">小老師登記</button>
+            <div id="userInfo" class="hidden flex items-center gap-3">
+                <span id="userName" class="text-xs font-bold text-slate-500"></span>
+                <button onclick="handleLogout()" class="text-slate-300 hover:text-red-500 text-[10px] font-bold">登出</button>
+            </div>
+        </div>
+    </header>
+
+    <main id="appContent" class="flex-1 overflow-hidden hidden">
+        <section id="viewHub" class="h-full overflow-y-auto p-10">
+            <div class="max-w-5xl mx-auto">
+                <div class="flex justify-between items-end mb-10">
+                    <h2 class="text-3xl font-black text-slate-800">班級大廳</h2>
+                    <div id="teacherTools" class="flex gap-2 hidden">
+                        <button onclick="openBehaviorSettings()" class="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-xs">項目設定</button>
+                        <button onclick="openModal('classModal')" class="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-sm">＋ 建立班級</button>
+                    </div>
+                </div>
+                <div id="classGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"></div>
+            </div>
+        </section>
+
+        <section id="viewClassroom" class="h-full overflow-y-auto p-6 hidden-view">
+            <div class="max-w-7xl mx-auto">
+                <div class="flex justify-between items-center mb-6">
+                    <button onclick="showHub()" class="text-slate-500 font-bold text-sm flex items-center gap-1">← 返回大廳</button>
+                    <div class="flex gap-2">
+                        <span id="shareIDTag" class="bg-slate-100 text-slate-400 px-3 py-2 rounded-xl text-[10px] font-mono self-center"></span>
+                        <button onclick="openSummary()" class="bg-indigo-600 text-white px-5 py-2 rounded-xl font-bold text-xs shadow-md">📊 結算報表</button>
+                    </div>
+                </div>
+                <div id="studentGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4 pb-20"></div>
+            </div>
+        </section>
+    </main>
+
+    <div id="scoreModal" class="fixed inset-0 bg-slate-900/40 hidden items-center justify-center z-[200] backdrop-blur-sm">
+        <div class="bg-white p-8 rounded-[2.5rem] w-full max-w-sm shadow-2xl">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="scoreModalTitle" class="font-black text-xl"></h3>
+                <button onclick="closeModal('scoreModal')" class="text-slate-300 hover:text-slate-500">✕</button>
+            </div>
+            <div id="behaviorButtons" class="grid grid-cols-2 gap-3 mb-6"></div>
+            
+            <div class="border-t pt-4">
+                <p class="text-[10px] font-bold text-slate-400 uppercase mb-3 tracking-widest">最近紀錄 (含時間)</p>
+                <div id="studentLogs" class="space-y-2 max-h-40 overflow-y-auto custom-scroll text-sm"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="assistantModal" class="fixed inset-0 bg-slate-900/40 hidden items-center justify-center z-[200]">
+        <div class="bg-white p-8 rounded-[2.5rem] w-full max-w-xs shadow-2xl">
+            <h3 class="font-black mb-6 text-center text-xl">小老師登記模式</h3>
+            <input type="text" id="shareIdInput" placeholder="請輸入老師的分享 ID" class="w-full bg-slate-50 p-4 rounded-2xl mb-4 outline-none border-2 border-transparent focus:border-amber-400 text-center font-mono">
+            <button onclick="connectAsAssistant()" class="w-full py-4 bg-amber-500 text-white font-black rounded-2xl shadow-lg">進入班級</button>
+            <button onclick="closeModal('assistantModal')" class="w-full mt-2 text-slate-400 text-xs font-bold">取消</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // === 🛠️ 請替換你的 Firebase Config ===
+       const firebaseConfig = {
+  apiKey: "AIzaSyAUeT5FQHuvw5E9b6qIQP0TKK3yDEh2yRQ",
+  authDomain: "classmanagerpro-39029.firebaseapp.com",
+  projectId: "classmanagerpro-39029",
+  storageBucket: "classmanagerpro-39029.firebasestorage.app",
+  messagingSenderId: "318739486360",
+  appId: "1:318739486360:web:74b6cd3e3cbc2a030e62ed"
+};
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth();
+        const db = getFirestore(app);
+        const provider = new GoogleAuthProvider();
+
+        window.handleLogin = () => signInWithPopup(auth, provider);
+        window.handleLogout = () => { signOut(auth); location.reload(); };
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                document.getElementById('userInfo').classList.remove('hidden');
+                document.getElementById('loginBtn').classList.add('hidden');
+                document.getElementById('assistantBtn').classList.add('hidden');
+                document.getElementById('teacherTools').classList.remove('hidden');
+                document.getElementById('appContent').classList.remove('hidden');
+                document.getElementById('userName').innerText = user.displayName;
+                window.isTeacher = true;
+                window.currentUID = user.uid;
+                await syncData(user.uid);
+            }
+        });
+
+        // 同步資料 (老師或小老師通用)
+        window.syncData = async (uid) => {
+            document.getElementById('loadingOverlay').style.display = 'flex';
+            const docSnap = await getDoc(doc(db, "users", uid));
+            if (docSnap.exists()) {
+                window.classData = docSnap.data();
+                document.getElementById('shareIDTag').innerText = `ID: ${uid}`;
+            } else if(window.isTeacher) {
+                window.classData = { db: {}, behaviors: [{name:"勇於發言",point:1},{name:"熱心助人",point:1},{name:"未帶課本",point:-1}] };
+                await window.saveToCloud();
+            }
+            renderHub();
+            document.getElementById('appContent').classList.remove('hidden');
+            document.getElementById('loadingOverlay').style.display = 'none';
+        };
+
+        window.saveToCloud = async () => {
+            await setDoc(doc(db, "users", window.currentUID), window.classData);
+            showToast("☁️ 雲端同步成功");
+        };
+
+        // 小老師連線
+        window.connectAsAssistant = async () => {
+            const uid = document.getElementById('shareIdInput').value.trim();
+            if(!uid) return;
+            window.isTeacher = false;
+            window.currentUID = uid;
+            await syncData(uid);
+            closeModal('assistantModal');
+            document.getElementById('assistantBtn').innerText = "小老師模式中";
+        };
+    </script>
+
+    <script>
+        const ANIMALS = ['🦁','🐯','🦒','🦊','🐨','🐼','🐻','🐰','🐹','🐭','🐸','🐧','🐦','🐤','🦉','🦄','🐴','🐮','🐷','🐙','🐶','🐠','🦀','🦋','🐝','🐞','🐿️','🦍'];
+        window.classData = { db: {}, behaviors: [] };
+        let currentClass = "", currentStudentIdx = -1;
+
+        window.openAssistantMode = () => openModal('assistantModal');
+        window.openModal = (id) => document.getElementById(id).classList.replace('hidden', 'flex');
+        window.closeModal = (id) => document.getElementById(id).classList.replace('flex', 'hidden');
+        window.showToast = (msg) => { const t = document.getElementById('toast'); t.innerText = msg; t.style.opacity = "1"; setTimeout(() => t.style.opacity = "0", 1500); };
+
+        window.renderHub = () => {
+            const grid = document.getElementById('classGrid');
+            grid.innerHTML = Object.keys(window.classData.db).map(name => `
+                <div onclick="enterClass('${name}')" class="bubble-card bg-white p-8 relative shadow-sm hover:shadow-md cursor-pointer">
+                    <h3 class="text-2xl font-black text-slate-800">${name}</h3>
+                    <p class="text-xs text-slate-400 font-bold mt-2 uppercase tracking-widest">${window.classData.db[name].length} 名學生</p>
+                </div>
+            `).join('') || `<div class="col-span-full py-20 text-center text-slate-300 font-bold">目前無班級資料</div>`;
+        };
+
+        window.enterClass = (name) => {
+            currentClass = name;
+            document.getElementById('viewHub').classList.add('hidden-view');
+            document.getElementById('viewClassroom').classList.remove('hidden-view');
+            document.getElementById('navBreadcrumb').classList.remove('hidden');
+            document.getElementById('breadcrumbClass').innerText = name;
+            renderClassroom();
+        };
+
+        window.showHub = () => {
+            currentClass = "";
+            document.getElementById('viewHub').classList.remove('hidden-view');
+            document.getElementById('viewClassroom').classList.add('hidden-view');
+            document.getElementById('navBreadcrumb').classList.add('hidden');
+        };
+
+        window.renderClassroom = () => {
+            const grid = document.getElementById('studentGrid');
+            grid.innerHTML = window.classData.db[currentClass].map((s, idx) => {
+                const total = s.logs.reduce((sum, l) => sum + l.point, 0);
+                return `
+                    <div class="student-card p-5" onclick="openScoreModal(${idx})">
+                        <div class="text-4xl mb-2">${ANIMALS[idx % ANIMALS.length]}</div>
+                        <div class="font-bold text-slate-700 text-sm truncate">${s.name}</div>
+                        <div class="mt-2 font-black text-xs ${total >= 0 ? 'text-emerald-500' : 'text-red-500'}">${total > 0 ? '+' : ''}${total}</div>
+                    </div>
+                `;
+            }).join('');
+        };
+
+        // 加減分視窗邏輯
+        window.openScoreModal = (idx) => {
+            currentStudentIdx = idx;
+            const s = window.classData.db[currentClass][idx];
+            document.getElementById('scoreModalTitle').innerText = s.name;
+            
+            // 渲染項目按鈕
+            document.getElementById('behaviorButtons').innerHTML = window.classData.behaviors.map(b => `
+                <button onclick="addLog(${b.point}, '${b.name}')" class="p-4 rounded-2xl border-2 border-slate-50 hover:bg-slate-50 transition text-left">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase">${b.point > 0 ? '加分' : '扣分'}</div>
+                    <div class="font-bold text-slate-700">${b.name}</div>
+                    <div class="text-xs font-black ${b.point > 0 ? 'text-emerald-500' : 'text-red-500'}">${b.point > 0 ? '+' : ''}${b.point}</div>
+                </button>
+            `).join('');
+
+            renderLogs();
+            openModal('scoreModal');
+        };
+
+        window.addLog = (point, name) => {
+            const now = new Date();
+            const timestamp = `${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
+            
+            window.classData.db[currentClass][currentStudentIdx].logs.push({
+                name, point, time: timestamp
+            });
+            
+            window.saveToCloud(); // 儲存至雲端
+            renderClassroom();
+            renderLogs();
+            showToast(`已登記: ${name} (${point})`);
+        };
+
+        function renderLogs() {
+            const logs = window.classData.db[currentClass][currentStudentIdx].logs;
+            document.getElementById('studentLogs').innerHTML = [...logs].reverse().map(l => `
+                <div class="flex justify-between items-center bg-slate-50 p-2 rounded-lg">
+                    <span class="text-slate-400 text-[10px] font-mono">${l.time}</span>
+                    <span class="font-bold text-slate-600 flex-1 ml-2">${l.name}</span>
+                    <span class="font-black ${l.point > 0 ? 'text-emerald-500' : 'text-red-500'}">${l.point > 0 ? '+' : ''}${l.point}</span>
+                </div>
+            `).join('') || `<p class="text-center py-4 text-slate-300">暫無紀錄</p>`;
+        }
+
+        // ... 其餘老師管理功能 (submitNewClass, openSummary 等) 與先前版本相同 ...
+    </script>
+</body>
+</html>
