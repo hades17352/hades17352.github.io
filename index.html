@@ -7,12 +7,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        /* [保留您原本所有的 CSS 樣式，此處省略以節省長度] */
+        /* 這裡放你原本所有的 CSS */
         body { font-family: 'Nunito', 'Noto Sans TC', sans-serif; background: #f8fafc; min-height: 100vh; overflow: hidden; }
         .bubble-card { backdrop-filter: blur(8px); border-radius: 2rem; border: 1px solid rgba(255, 255, 255, 0.5); transition: 0.3s; position: relative; }
-        .bubble-pink { background: #fee2e2; } .bubble-blue { background: #e0f2fe; }
-        .bubble-green { background: #dcfce7; } .bubble-purple { background: #f3e8ff; }
-        .bubble-orange { background: #ffedd5; }
         .student-card { transition: 0.2s; cursor: pointer; border-radius: 1.25rem; background: white; border: 1px solid #e2e8f0; position: relative; }
         .hidden-view { display: none !important; }
         #toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: #334155; color: white; padding: 10px 20px; border-radius: 12px; z-index: 1000; opacity: 0; transition: 0.3s; pointer-events: none; }
@@ -26,27 +23,30 @@
 
     <header class="bg-white border-b px-8 py-4 flex justify-between items-center z-[60]">
         <div class="flex items-center gap-4">
-            <h1 class="text-xl font-black text-slate-800">CLASS MANAGER <span class="text-xs text-indigo-500">CLOUD</span></h1>
+            <h1 class="text-xl font-black text-slate-800 tracking-tight">CLASS MANAGER <span class="text-[10px] text-indigo-500 font-bold ml-1">CLOUD</span></h1>
             <div id="navBreadcrumb" class="hidden text-slate-400 font-bold flex items-center gap-2 text-sm">
                 <span>/</span><span id="breadcrumbClass" class="text-slate-600"></span>
             </div>
         </div>
         <div class="flex gap-2">
-            <button id="loginBtn" onclick="handleLogin()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs">老師 Google 登入</button>
-            <button id="assistantBtn" onclick="openAssistantModal()" class="bg-amber-100 text-amber-700 px-4 py-2 rounded-xl font-bold text-xs">小老師登記</button>
-            <div id="teacherArea" class="hidden flex items-center gap-2">
-                <button onclick="openBehaviorSettings()" class="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-xs">項目設定</button>
-                <button onclick="handleLogout()" class="bg-slate-100 text-slate-400 px-3 py-2 rounded-xl font-bold text-[10px]">登出</button>
+            <button id="loginBtn" onclick="handleLogin()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs shadow-md">老師 Google 登入</button>
+            <button id="assistantBtn" onclick="openAssistantModal()" class="bg-amber-100 text-amber-700 px-4 py-2 rounded-xl font-bold text-xs">小老師模式</button>
+            <div id="teacherArea" class="hidden flex items-center gap-3">
+                <span id="userName" class="text-xs font-bold text-slate-400"></span>
+                <button onclick="handleLogout()" class="text-slate-300 hover:text-red-500 text-[10px] font-bold">登出</button>
             </div>
         </div>
     </header>
 
     <main id="appContent" class="flex-1 overflow-hidden hidden">
         <section id="viewHub" class="h-full overflow-y-auto p-10">
-            <div class="max-w-5xl mx-auto text-center" id="hubTitleArea">
-                <div class="flex justify-between items-end mb-10 text-left">
+            <div class="max-w-5xl mx-auto">
+                <div class="flex justify-between items-end mb-10">
                     <h2 class="text-3xl font-black text-slate-800">班級大廳</h2>
-                    <button id="teacherOnlyAdd" onclick="openModal('classModal')" class="hidden bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-sm">＋ 建立班級</button>
+                    <div id="teacherHubTools" class="hidden flex gap-2">
+                        <button onclick="openBehaviorSettings()" class="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-xs">項目設定</button>
+                        <button onclick="openModal('classModal')" class="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-sm">＋ 建立班級</button>
+                    </div>
                 </div>
                 <div id="classGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"></div>
             </div>
@@ -57,6 +57,7 @@
                 <div class="flex justify-between items-center mb-6">
                     <button onclick="showHub()" class="text-slate-500 font-bold text-sm">← 返回大廳</button>
                     <div class="flex gap-2">
+                        <button id="teacherRenameBtn" onclick="openBatchRename()" class="hidden bg-amber-50 text-amber-600 px-4 py-2 rounded-xl font-bold text-xs">📝 批次改名</button>
                         <button onclick="openSummary()" class="bg-indigo-600 text-white px-5 py-2 rounded-xl font-bold text-xs shadow-md">📊 結算報表</button>
                     </div>
                 </div>
@@ -68,9 +69,8 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // 1. 填入您的 Firebase 設定
         const firebaseConfig = {
             apiKey: "你的_API_KEY",
             authDomain: "你的_PROJECT_ID.firebaseapp.com",
@@ -85,100 +85,102 @@
         const db = getFirestore(app);
         const provider = new GoogleAuthProvider();
 
-        // 2. 函數明確掛載到 window (解決無法登入的關鍵)
+        // 必須明確掛載到 window，HTML 按鈕才找得到
         window.handleLogin = async () => {
             try {
                 await signInWithPopup(auth, provider);
-            } catch (error) {
-                console.error("登入失敗原因:", error.message);
-                alert("登入失敗，請檢查 Firebase 設定與授權域名。");
+            } catch (e) {
+                console.error("Login Error:", e);
+                alert("登入失敗，請確認網域授權。錯誤代碼：" + e.code);
             }
         };
 
         window.handleLogout = () => signOut(auth).then(() => location.reload());
 
-        // 3. 登入狀態監聽
-        onAuthStateChanged(auth, async (user) => {
-            const loading = document.getElementById('loadingOverlay');
+        // 核心同步邏輯
+        onAuthStateChanged(auth, (user) => {
             if (user) {
                 window.isTeacher = true;
                 window.currentUID = user.uid;
-                document.getElementById('teacherArea').classList.remove('hidden');
                 document.getElementById('loginBtn').classList.add('hidden');
                 document.getElementById('assistantBtn').classList.add('hidden');
-                document.getElementById('teacherOnlyAdd').classList.remove('hidden');
+                document.getElementById('teacherArea').classList.remove('hidden');
+                document.getElementById('teacherHubTools').classList.remove('hidden');
+                document.getElementById('userName').innerText = user.displayName;
                 
                 // 實時監聽
-                onSnapshot(doc(db, "users", user.uid), (doc) => {
-                    if (doc.exists()) {
-                        window.classData = doc.data();
+                onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+                    if (docSnap.exists()) {
+                        window.classData = docSnap.data();
                     } else {
+                        // 初次使用初始化
                         window.classData = { db: {}, behaviors: [{name:"優異",point:1}] };
                         window.saveToCloud();
                     }
                     renderHub();
                     document.getElementById('appContent').classList.remove('hidden');
-                    loading.style.display = 'none';
+                    document.getElementById('loadingOverlay').style.display = 'none';
                 });
             } else {
-                loading.style.display = 'none';
-                // 未登入狀態，僅顯示進入大廳供小老師使用
+                document.getElementById('loadingOverlay').style.display = 'none';
+                // 非老師模式下顯示大廳(小老師用)
                 document.getElementById('appContent').classList.remove('hidden');
             }
         });
 
         window.saveToCloud = async () => {
             if(!window.currentUID) return;
-            try {
-                await setDoc(doc(db, "users", window.currentUID), window.classData);
-                console.log("雲端同步成功");
-            } catch (e) { console.error("儲存失敗", e); }
-        };
-
-        // 小老師 ID 連線
-        window.connectAsAssistant = async (inputUID) => {
-            const uid = inputUID || prompt("請輸入老師的分享 ID:");
-            if(!uid) return;
-            const docSnap = await getDoc(doc(db, "users", uid));
-            if(docSnap.exists()){
-                window.isTeacher = false;
-                window.currentUID = uid;
-                window.classData = docSnap.data();
-                renderHub();
-                showToast("已連線至老師資料庫");
-            } else { alert("找不到 ID"); }
+            await setDoc(doc(db, "users", window.currentUID), window.classData);
         };
     </script>
 
     <script>
-        // [此處放置您原始 index.html 內部的所有 UI 邏輯]
-        // 注意：將原本程式碼中的 `db` 全部改寫成 `window.classData.db`
-        // 將原本程式碼中的 `behaviors` 改成 `window.classData.behaviors`
-        // 將原本程式碼中的 `saveDB()` 或 `saveBehaviors()` 全部改成 `window.saveToCloud()`
+        /* 這裡貼上您原本 index.html 檔案結尾處的所有 function 
+           (例如 renderHub, enterClass, addLog, submitNewClass 等)
+           
+           重要修改：
+           1. 把原本程式碼中的變數 `db` 改成 `window.classData.db`
+           2. 把原本程式碼中的變數 `behaviors` 改成 `window.classData.behaviors`
+           3. 把 `saveDB()` 改成 `window.saveToCloud()`
+        */
         
-        // 範例修正：
-        window.renderHub = () => {
-            const grid = document.getElementById('classGrid');
-            if(!window.classData || !window.classData.db) return;
-            const names = Object.keys(window.classData.db);
-            grid.innerHTML = names.map(name => `
-                <div onclick="checkClassAccess('${name}')" class="bubble-card bg-white p-8 cursor-pointer shadow-sm">
-                    <h3 class="text-2xl font-black">${name}</h3>
-                    ${window.isTeacher ? `<button onclick="event.stopPropagation(); setClassPassword('${name}')" class="absolute top-2 right-2">🔒</button>` : ''}
-                </div>
-            `).join('');
+        window.classData = { db: {}, behaviors: [] };
+        const ANIMALS = ['🦁','🐯','🦒','🦊','🐨','🐼','🐻','🐰','🐹','🐭','🐸','🐧','🐦','🐤','🦉','🦄','🐴','🐮','🐷','🐙'];
+        const COLORS = ['bubble-pink', 'bubble-blue', 'bubble-green', 'bubble-purple', 'bubble-orange'];
+
+        // 修改密碼功能 (老師專屬)
+        window.setClassPassword = (name) => {
+            const pass = prompt("請設定此班級的小老師密碼：", window.classData.db[name].password || "");
+            if(pass !== null) {
+                window.classData.db[name].password = pass;
+                window.saveToCloud();
+                alert("密碼已設定");
+            }
         };
 
-        // 檢查密碼邏輯
+        // 班級大廳渲染
+        window.renderHub = () => {
+            const grid = document.getElementById('classGrid');
+            const names = Object.keys(window.classData.db);
+            grid.innerHTML = names.map((name, i) => `
+                <div onclick="checkClassAccess('${name}')" class="bubble-card ${COLORS[i % 5]} p-8 cursor-pointer">
+                    <h3 class="text-2xl font-black">${name}</h3>
+                    ${window.isTeacher ? `<button onclick="event.stopPropagation(); setClassPassword('${name}')" class="absolute top-4 right-4 text-xs bg-white/50 p-1 rounded">🔒 密碼</button>` : ''}
+                </div>
+            `).join('') || `<div class="col-span-full py-10 text-center text-slate-300">目前無班級</div>`;
+        };
+
         window.checkClassAccess = (name) => {
             if(window.isTeacher) { enterClass(name); return; }
             const pass = prompt("請輸入班級密碼：");
             if(pass === window.classData.db[name].password) {
                 enterClass(name);
             } else {
-                alert("密碼錯誤");
+                alert("密碼錯誤！");
             }
         };
+
+        // [其餘所有原本 index.html 的功能邏輯依此類推...]
     </script>
 </body>
 </html>
