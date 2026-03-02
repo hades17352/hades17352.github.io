@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>班級管理系統 Pro - Firebase 雲端版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // === 🛠️ 請在此處替換為你剛才在 Firebase 複製的設定碼 ===
+        const firebaseConfig = {
+  apiKey: "AIzaSyAUeT5FQHuvw5E9b6qIQP0TKK3yDEh2yRQ",
+  authDomain: "classmanagerpro-39029.firebaseapp.com",
+  projectId: "classmanagerpro-39029",
+  storageBucket: "classmanagerpro-39029.firebasestorage.app",
+  messagingSenderId: "318739486360",
+  appId: "1:318739486360:web:74b6cd3e3cbc2a030e62ed"
+};
+
+        // 初始化 Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth();
+        const db = getFirestore(app);
+        const provider = new GoogleAuthProvider();
+
+        // 核心變數
+        window.currentUser = null;
+        window.classData = { db: {}, behaviors: [] };
+
+        // === 核心功能：登入與資料同步 ===
+
+        // 1. 監聽登入狀態
+        onAuthStateChanged(auth, async (user) => {
+            const loginBtn = document.getElementById('loginBtn');
+            const mainContent = document.getElementById('mainContent');
+            const welcomeText = document.getElementById('welcomeText');
+
+            if (user) {
+                window.currentUser = user;
+                loginBtn.innerText = "登出 Google";
+                welcomeText.innerText = `老師您好：${user.displayName}`;
+                mainContent.classList.remove('hidden');
+                await syncFromFirebase();
+            } else {
+                window.currentUser = null;
+                loginBtn.innerText = "Google 帳號登入";
+                welcomeText.innerText = "請先登入以同步資料";
+                mainContent.classList.add('hidden');
+                document.getElementById('viewClassroom').classList.add('hidden-view');
+                document.getElementById('viewHub').classList.remove('hidden-view');
+            }
+        });
+
+        // 2. 登入/登出切換
+        window.toggleAuth = () => {
+            if (!auth.currentUser) {
+                signInWithPopup(auth, provider).catch(error => alert("登入失敗: " + error.message));
+            } else {
+                signOut(auth);
+            }
+        };
+
+        // 3. 從 Firebase 讀取資料
+        window.syncFromFirebase = async () => {
+            if (!window.currentUser) return;
+            document.getElementById('loadingOverlay').style.display = 'flex';
+            
+            const docRef = doc(db, "users", window.currentUser.uid);
+            const docSnap = await getDoc(docRef);
+
+            if (docSnap.exists()) {
+                window.classData = docSnap.data();
+            } else {
+                // 初次使用的預設資料
+                window.classData = { 
+                    db: {}, 
+                    behaviors: [
+                        { name: "勇於發言", point: 1 }, { name: "熱心助人", point: 1 }, 
+                        { name: "未帶課本", point: -1 }, { name: "干擾秩序", point: -1 }
+                    ] 
+                };
+            }
+            renderHub();
+            document.getElementById('loadingOverlay').style.display = 'none';
+            showToast("☁️ 雲端同步成功");
+        };
+
+        // 4. 儲存資料到 Firebase
+        window.saveToFirebase = async () => {
+            if (!window.currentUser) return;
+            showToast("⏳ 儲存中...");
+            try {
+                await setDoc(doc(db, "users", window.currentUser.uid), window.classData);
+                showToast("✅ 已自動存檔");
+            } catch (e) {
+                showToast("❌ 儲存失敗");
+            }
+        };
+
+        // 讓原本的函數相容新架構
+        window.saveDB = () => window.saveToFirebase();
+        window.saveBehaviors = () => window.saveToFirebase();
+
+    </script>
+    <style>
+        /* 保留原本的所有 CSS 樣式 */
+        body { font-family: 'Nunito', 'Noto Sans TC', sans-serif; background: #f8fafc; min-height: 100vh; overflow: hidden; }
+        .hidden-view { display: none !important; }
+        #loadingOverlay { position: fixed; inset: 0; background: rgba(255,255,255,0.8); z-index: 9999; display: none; align-items: center; justify-content: center; font-weight: bold; color: #6366f1; }
+        /* ... 其他樣式保持不變 ... */
+    </style>
+</head>
+<body>
+    <div id="loadingOverlay">☁️ 雲端資料同步中...</div>
+    <div id="toast" style="position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#333; color:white; padding:10px 20px; border-radius:10px; opacity:0; transition:0.3s; z-index:9999;"></div>
+
+    <header class="bg-white border-b px-8 py-4 flex justify-between items-center shadow-sm">
+        <div>
+            <h1 class="text-xl font-black text-slate-800">CLASS MANAGER <span class="text-indigo-500 text-xs">FIREBASE</span></h1>
+            <p id="welcomeText" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">請先登入</p>
+        </div>
+        <button id="loginBtn" onclick="toggleAuth()" class="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold text-sm shadow-md hover:bg-indigo-700 transition">Google 帳號登入</button>
+    </header>
+
+    <main id="mainContent" class="hidden">
+        </main>
+
+    </body>
+</html>
