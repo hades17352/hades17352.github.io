@@ -181,25 +181,21 @@
         let currentClass = "", currentStudentIdx = -1, isAdmin = false;
 
         // --- 雲端同步邏輯 (與新版 GAS 嫁接) ---
-        async function syncFromCloud() {
-            document.getElementById('loadingOverlay').style.display = 'flex';
-            try {
-                const response = await fetch(API_URL);
-                const data = await response.json();
-                db = data.db || {};
-                behaviors = (data.behaviors && data.behaviors.length) ? data.behaviors : [
-                    { name: "勇於發言", point: 1 }, { name: "熱心助人", point: 1 }, { name: "未帶課本", point: -1 }, { name: "干擾秩序", point: -1 }
-                ];
-                renderHub();
-                if(currentClass) renderClassroom();
-                showToast("☁️ 資料載入完成");
-            } catch (e) {
-                showToast("❌ 載入失敗，請檢查網址");
-            } finally {
-                document.getElementById('loadingOverlay').style.display = 'none';
-            }
-        }
-
+async function syncFromCloud() {
+    document.getElementById('loadingOverlay').style.display = 'flex';
+    try {
+        const response = await fetch(API_URL);
+        if (!response.ok) throw new Error(`HTTP 錯誤! 狀態碼: ${response.status}`); // 新增狀態檢查
+        const data = await response.json();
+        // ... 原有邏輯 ...
+        showToast("☁️ 資料已同步");
+    } catch (e) {
+        console.error(e);
+        showToast("❌ 同步失敗: " + e.message); // 顯示具體原因
+    } finally {
+        document.getElementById('loadingOverlay').style.display = 'none';
+    }
+}
         async function saveToCloud() {
             if (!API_URL || API_URL.includes("您的")) return;
             try {
