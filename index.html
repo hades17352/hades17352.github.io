@@ -177,302 +177,251 @@
         const COLORS = ['bubble-pink', 'bubble-blue', 'bubble-green', 'bubble-purple', 'bubble-orange'];
 
         let db = {};
-        let behaviors = [];
-        let currentClass = "", currentStudentIdx = -1, isAdmin = false;
+let behaviors = [];
+let currentClass = null;
 
-        // --- 雲端同步邏輯 (與新版 GAS 嫁接) ---
+// ==========================================
+// 2. 初始化與同步邏輯 (解決換裝置問題)
+// ==========================================
+
+window.onload = async () => {
+    // A. 先讀取本地快取（讓畫面秒開）
+    const localDB = localStorage.getItem('classroomDB');
+    const localBH = localStorage.getItem('classroomBehaviors');
+    if (localDB) db = JSON.parse(localDB);
+    if (localBH) behaviors = JSON.parse(localBH);
+    
+    renderHub();
+
+    // B. 強制從雲端抓取最新資料（確保換裝置也能同步）
+    await syncFromCloud();
+};
+
 async function syncFromCloud() {
+    if (!API_URL || API_URL.includes("請填入")) {
+        showToast("⚠️ 請先設定 API_URL");
+        return;
+    }
+    
     document.getElementById('loadingOverlay').style.display = 'flex';
     try {
-        const response = await fetch(API_URL);
-        if (!response.ok) throw new Error(`HTTP 錯誤! 狀態碼: ${response.status}`); // 新增狀態檢查
+        // 使用時間戳記防止瀏覽器快取舊資料
+        const response = await fetch(`${API_URL}?t=${Date.now()}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            redirect: 'follow'
+        });
+
+        if (!response.ok) throw new Error("網路回應異常");
+
         const data = await response.json();
-        // ... 原有邏輯 ...
-        showToast("☁️ 資料已同步");
+        
+        // 如果雲端有資料，則覆蓋本地，達成同步
+        if (data.db && Object.keys(data.db).length > 0) {
+            db = data.db;
+            behaviors = data.behaviors || [];
+            
+            // 更新本地儲存
+            localStorage.setItem('classroomDB', JSON.stringify(db));
+            localStorage.setItem('classroomBehaviors', JSON.stringify(behaviors));
+            
+            renderHub();
+            if (currentClass) renderClassroom();
+            showToast("☁️ 雲端同步成功");
+        }
     } catch (e) {
-        console.error(e);
-        showToast("❌ 同步失敗: " + e.message); // 顯示具體原因
+        console.error("同步失敗:", e);
+        showToast("❌ 同步失敗，使用本地存檔");
     } finally {
         document.getElementById('loadingOverlay').style.display = 'none';
     }
 }
-        async function saveToCloud() {
-            if (!API_URL || API_URL.includes("您的")) return;
-            try {
-                const response = await fetch(API_URL, { 
-                    method: 'POST', 
-                    body: JSON.stringify({ db, behaviors }) 
-                });
-                const res = await response.json();
-                if(res.status === 'success') showToast("✅ 同步成功");
-            } catch (e) {
-                showToast("⚠️ 同步不完全");
-            }
+
+async function saveToCloud() {
+    if (!API_URL || API_URL.includes("請填入")) {
+        showToast("⚠️ 請先設定 API_URL");
+        return;
+    }
+    document.getElementById('loadingOverlay').style.display = 'flex';
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({ db, behaviors }),
+            redirect: 'follow'
+        });
+        const result = await response.json();
+        if (result.status === "success") {
+            showToast("🚀 資料已成功推送到雲端");
         }
+    } catch (e) {
+        console.error("儲存失敗:", e);
+        showToast("❌ 儲存失敗");
+    } finally {
+        document.getElementById('loadingOverlay').style.display = 'none';
+    }
+}
 
-        // --- UI 操作助手 ---
-        const openModal = (id) => { document.getElementById(id).classList.replace('hidden', 'flex'); };
-        const closeModal = (id) => { document.getElementById(id).classList.replace('flex', 'hidden'); };
-        const showToast = (msg) => { const t = document.getElementById('toast'); t.innerText = msg; t.style.opacity = "1"; setTimeout(() => t.style.opacity = "0", 1500); };
+// ==========================================
+// 3. 核心功能函式 (班級與學生管理)
+// ==========================================
 
-        // --- 權限系統 ---
-        function toggleAdminMode() {
-            if (!isAdmin) {
-                document.getElementById('pwTitle').innerText = "進入管理權限";
-                document.getElementById('pwInput').value = "";
-                openModal('passwordModal');
-                document.getElementById('pwConfirmBtn').onclick = () => {
-                    if (document.getElementById('pwInput').value === "admin") {
-                        isAdmin = true; applyMode(); closeModal('passwordModal');
-                    } else { alert("密碼錯誤"); }
-                };
-            } else { isAdmin = false; applyMode(); }
-        }
+function saveDB() { localStorage.setItem('classroomDB', JSON.stringify(db)); }
+function saveBehaviors() { localStorage.setItem('classroomBehaviors', JSON.stringify(behaviors)); }
 
-        function applyMode() {
-            document.body.classList.toggle('admin-mode', isAdmin);
-            document.getElementById('adminToggleBtn').innerText = isAdmin ? "🔓 老師模式" : "🔒 小老師模式";
-            ['settingsBtn', 'addClassBtn', 'addStudentBtn', 'batchRenameBtn'].forEach(id => {
-                const el = document.getElementById(id);
-                if(el) el.classList.toggle('hidden', !isAdmin);
-            });
-            renderHub(); 
-            if(currentClass) renderClassroom();
-        }
+function renderHub() {
+    const hub = document.getElementById('classHub');
+    const list = document.getElementById('classList');
+    hub.style.display = 'block';
+    document.getElementById('classroom').style.display = 'none';
+    
+    list.innerHTML = Object.keys(db).map(cls => `
+        <div onclick="enterClass('${cls}')" class="bubble-card bg-white p-6 shadow-sm flex justify-between items-center cursor-pointer hover:shadow-md">
+            <span class="text-xl font-bold text-slate-700">🏫 ${cls}</span>
+            <button onclick="event.stopPropagation(); deleteClass('${cls}')" class="text-red-300 hover:text-red-500">刪除</button>
+        </div>
+    `).join('');
+}
 
-        // --- 班級管理 ---
-        function checkClassPassword(name) {
-            if (isAdmin) return enterClass(name);
-            document.getElementById('pwTitle').innerText = `${name} 登入`;
-            document.getElementById('pwInput').value = "";
-            openModal('passwordModal');
-            document.getElementById('pwConfirmBtn').onclick = () => {
-                if (document.getElementById('pwInput').value === "shes" + name) {
-                    closeModal('passwordModal'); enterClass(name);
-                } else { alert("密碼錯誤"); }
-            };
-        }
+function addClass() {
+    const name = prompt("請輸入班級名稱 (例如: 301):");
+    if (name && !db[name]) {
+        db[name] = [];
+        saveDB();
+        renderHub();
+    }
+}
 
-        function enterClass(name) {
-            currentClass = name;
-            document.getElementById('viewHub').classList.add('hidden-view');
-            document.getElementById('viewClassroom').classList.remove('hidden-view');
-            document.getElementById('breadcrumbClass').innerText = name;
-            document.getElementById('navBreadcrumb').classList.remove('hidden');
-            renderClassroom();
-        }
+function deleteClass(name) {
+    if (confirm(`確定要刪除 ${name} 班嗎？`)) {
+        delete db[name];
+        saveDB();
+        renderHub();
+    }
+}
 
-        function showHub() {
-            currentClass = "";
-            document.getElementById('viewClassroom').classList.add('hidden-view');
-            document.getElementById('viewHub').classList.remove('hidden-view');
-            document.getElementById('navBreadcrumb').classList.add('hidden');
-            renderHub();
-        }
+function enterClass(name) {
+    currentClass = name;
+    document.getElementById('classHub').style.display = 'none';
+    document.getElementById('classroom').style.display = 'block';
+    document.getElementById('currentClassName').innerText = name;
+    renderClassroom();
+}
 
-        // --- 核心渲染功能 ---
-        function renderHub() {
-            const grid = document.getElementById('classGrid');
-            grid.innerHTML = Object.keys(db).map((name, i) => `
-                <div onclick="checkClassPassword('${name}')" class="bubble-card ${COLORS[i % COLORS.length]} p-8 cursor-pointer relative group shadow-sm hover:shadow-xl transition-all">
-                    <h3 class="text-2xl font-black text-slate-800">${name}</h3>
-                    <p class="text-xs text-slate-500 font-bold mt-2 uppercase tracking-widest">${db[name].length} Students</p>
-                    ${isAdmin ? `<button onclick="event.stopPropagation(); deleteClass('${name}')" class="absolute top-6 right-6 text-slate-400 hover:text-red-500">✕</button>` : ''}
+function renderClassroom() {
+    const list = document.getElementById('studentList');
+    list.innerHTML = db[currentClass].map((s, i) => {
+        const total = (s.logs || []).reduce((sum, l) => sum + l.point, 0);
+        return `
+            <div class="student-card p-4 shadow-sm relative overflow-hidden bg-white" onclick="showScoreModal(${i})">
+                <div class="text-center">
+                    <div class="text-3xl mb-2">${s.icon || '👤'}</div>
+                    <div class="font-bold text-slate-700">${s.name}</div>
+                    <div class="text-2xl font-black ${total >= 0 ? 'text-blue-500' : 'text-red-500'}">${total}</div>
                 </div>
-            `).join('') || `<div class="col-span-full py-20 text-center text-slate-300 font-bold">目前沒有班級，請點擊「建立班級」</div>`;
-        }
-
-        function renderClassroom() {
-            const grid = document.getElementById('studentGrid');
-            grid.innerHTML = db[currentClass].map((s, idx) => {
-                const total = (s.logs || []).reduce((sum, l) => sum + (l.point || 0), 0);
-                const scoreColor = total > 0 ? 'text-emerald-500' : (total < 0 ? 'text-red-500' : 'text-slate-300');
-                const displayIcon = s.icon || ANIMALS[idx % ANIMALS.length];
-                
-                return `
-                    <div onclick="openStudentModal(${idx})" class="student-card p-5 pt-7 flex flex-col items-center">
-                        <span class="absolute top-3 left-3 text-[10px] text-slate-200 font-black">${idx + 1}</span>
-                        <div class="admin-controls">
-                            <button onclick="event.stopPropagation(); moveStudent(${idx}, -1)" class="w-6 h-6 bg-white border border-slate-100 rounded-lg text-[10px]">▲</button>
-                            <button onclick="event.stopPropagation(); moveStudent(${idx}, 1)" class="w-6 h-6 bg-white border border-slate-100 rounded-lg text-[10px]">▼</button>
-                            <button onclick="event.stopPropagation(); renameStudent(${idx})" class="w-6 h-6 bg-white border border-slate-100 rounded-lg text-[10px] text-indigo-500">✎</button>
-                            <button onclick="event.stopPropagation(); deleteStudent(${idx})" class="w-6 h-6 bg-white border border-slate-100 rounded-lg text-[10px] text-red-400">✕</button>
-                        </div>
-                        <div class="text-4xl mb-2">${displayIcon}</div>
-                        <div class="font-bold text-slate-700 text-sm truncate w-full text-center">${s.name}</div>
-                        <div class="mt-2 font-black text-xs ${scoreColor}">${total > 0 ? '+' : ''}${total}</div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function openStudentModal(idx) {
-            currentStudentIdx = idx; 
-            const s = db[currentClass][idx];
-            const displayIcon = s.icon || ANIMALS[idx % ANIMALS.length];
-            
-            document.getElementById('modalAvatar').innerText = displayIcon;
-            document.getElementById('modalStudentName').innerText = s.name;
-            
-            const iconSelector = document.getElementById('iconSelectorContainer');
-            if(isAdmin) {
-                iconSelector.classList.remove('hidden');
-                renderIconGrid(s.icon);
-            } else {
-                iconSelector.classList.add('hidden');
-            }
-
-            document.getElementById('behaviorGrid').innerHTML = behaviors.map(b => `
-                <button onclick="addLog('${b.name}', ${b.point})" class="p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-white hover:border-indigo-400 transition-all text-left">
-                    <p class="text-xs font-black text-slate-600">${b.name}</p>
-                    <p class="${b.point >= 0 ? 'text-emerald-500' : 'text-red-400'} text-[10px] font-black mt-1">${b.point > 0 ? '+' : ''}${b.point}</p>
-                </button>
-            `).join('');
-            
-            updateHistoryUI(); 
-            openModal('studentModal');
-        }
-
-        function renderIconGrid(selectedIcon) {
-            const grid = document.getElementById('iconGrid');
-            grid.innerHTML = ANIMALS.map(icon => `
-                <button onclick="selectStudentIcon('${icon}')" 
-                    class="icon-selector-btn w-10 h-10 flex items-center justify-center rounded-xl text-xl hover:bg-white shadow-sm ${selectedIcon === icon ? 'active' : ''}">
-                    ${icon}
-                </button>
-            `).join('') + `
-                <button onclick="selectStudentIcon(null)" class="icon-selector-btn w-10 h-10 flex items-center justify-center rounded-xl text-xs font-bold text-slate-400">預設</button>
-            `;
-        }
-
-        function selectStudentIcon(icon) {
-            db[currentClass][currentStudentIdx].icon = icon;
-            const displayIcon = icon || ANIMALS[currentStudentIdx % ANIMALS.length];
-            document.getElementById('modalAvatar').innerText = displayIcon;
-            renderIconGrid(icon);
-            renderClassroom();
-            saveToCloud();
-        }
-
-        function addLog(name, point) {
-            const s = db[currentClass][currentStudentIdx];
-            if (!s.logs) s.logs = [];
-            const now = new Date();
-            const timeStr = `${now.getMonth() + 1}/${now.getDate()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
-            s.logs.push({ name, point, time: timeStr });
-            saveToCloud(); 
-            renderClassroom(); 
-            updateHistoryUI();
-        }
-
-        function updateHistoryUI() {
-            const logs = db[currentClass][currentStudentIdx].logs || [];
-            document.getElementById('historyList').innerHTML = logs.map((l, originalIdx) => ({...l, originalIdx})).reverse().map(l => `
-                <div class="flex justify-between items-center py-3 border-b border-slate-50">
-                    <div class="flex flex-col">
-                        <span class="font-bold text-slate-700 text-xs">${l.name} <span class="${l.point > 0 ? 'text-emerald-500' : 'text-red-400'}">(${l.point > 0 ? '+' : ''}${l.point})</span></span>
-                        <span class="text-slate-300 text-[9px] font-black">${l.time}</span>
-                    </div>
-                    ${isAdmin ? `<button onclick="deleteLog(${l.originalIdx})" class="text-red-300 hover:text-red-500">✕</button>` : ''}
+                <div class="flex justify-center gap-1 mt-2">
+                    <button onclick="event.stopPropagation(); moveStudent(${i}, -1)" class="p-1 text-slate-300 hover:text-slate-500">◀</button>
+                    <button onclick="event.stopPropagation(); editStudent(${i})" class="text-xs text-slate-400 mx-1">編輯</button>
+                    <button onclick="event.stopPropagation(); moveStudent(${i}, 1)" class="p-1 text-slate-300 hover:text-slate-500">▶</button>
                 </div>
-            `).join('') || "<div class='text-slate-300 italic text-center py-10 text-[10px]'>尚無紀錄</div>";
-        }
+            </div>
+        `;
+    }).join('');
+}
 
-        function deleteLog(logIdx) {
-            if(confirm("確定要刪除這筆登記嗎？")) {
-                db[currentClass][currentStudentIdx].logs.splice(logIdx, 1);
-                saveToCloud(); renderClassroom(); updateHistoryUI();
-            }
-        }
+function addStudent() {
+    const name = prompt("學生姓名:");
+    if (name) {
+        db[currentClass].push({ name, logs: [], icon: '👤' });
+        saveDB();
+        renderClassroom();
+    }
+}
 
-        // --- 統計與功能性邏輯 ---
-        function openSummary() {
-            const tbody = document.getElementById('summaryTableBody');
-            tbody.innerHTML = db[currentClass].map((s, idx) => {
-                const total = (s.logs || []).reduce((a, b) => a + (b.point || 0), 0);
-                const stats = {};
-                (s.logs || []).forEach(log => { stats[log.name] = (stats[log.name] || 0) + 1; });
-                let detail = Object.keys(stats).map(k => {
-                    const bh = behaviors.find(b => b.name === k);
-                    return `<span class="report-tag ${(bh?.point||0) >= 0 ? 'tag-plus' : 'tag-minus'}">${k} x${stats[k]}</span>`;
-                }).join('');
-                return `<tr><td class="p-4 text-center text-slate-400 font-black">${idx+1}</td><td class="p-4 font-black">${s.name}</td><td class="p-4 text-center font-black ${total >= 0 ? 'text-emerald-500' : 'text-red-500'}">${total}</td><td class="p-4">${detail}</td></tr>`;
-            }).join('');
-            openModal('summaryModal');
-        }
+function editStudent(i) {
+    const s = db[currentClass][i];
+    const n = prompt("修改姓名：", s.name);
+    if(n) {
+        s.name = n;
+        const icon = prompt("更換圖示 (Emoji):", s.icon || '👤');
+        if(icon) s.icon = icon;
+        saveDB();
+        renderClassroom();
+    }
+}
 
-        function copySummaryReport() {
-            let txt = `【${currentClass} 班級結算】\n`;
-            db[currentClass].forEach((s, i) => {
-                const total = (s.logs || []).reduce((a, b) => a + (b.point || 0), 0);
-                txt += `${i+1}. ${s.name}: ${total}分\n`;
-            });
-            navigator.clipboard.writeText(txt).then(() => showToast("📋 報表文本已複製"));
-        }
+function moveStudent(idx, direction) {
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= db[currentClass].length) return;
+    [db[currentClass][idx], db[currentClass][targetIdx]] = [db[currentClass][targetIdx], db[currentClass][idx]];
+    saveDB();
+    renderClassroom();
+}
 
-        // --- 管理員操作 ---
-        function submitNewClass() {
-            const n = document.getElementById('newClassName').value.trim();
-            const c = parseInt(document.getElementById('studentCount').value) || 0;
-            if(n) {
-                if (db[n]) return alert("班級已存在");
-                db[n] = Array.from({length: c}, (_, i) => ({name: `學生 ${i+1}`, logs: [], icon: null}));
-                saveToCloud(); renderHub(); closeModal('classModal');
-            }
-        }
-        function deleteClass(n) { if(confirm(`確定刪除 ${n}？`)) { delete db[n]; saveToCloud(); renderHub(); } }
-        function addSingleStudent() {
-            const n = document.getElementById('singleStudentName').value.trim();
-            if(n) { db[currentClass].push({name: n, logs: [], icon: null}); saveToCloud(); renderClassroom(); closeModal('singleStudentModal'); }
-        }
-        function deleteStudent(i) { if(confirm("確定刪除？")) { db[currentClass].splice(i, 1); saveToCloud(); renderClassroom(); } }
-        function renameStudent(i) { 
-            const n = prompt("新姓名：", db[currentClass][i].name); 
-            if(n) { db[currentClass][i].name = n; saveToCloud(); renderClassroom(); } 
-        }
-        function moveStudent(idx, direction) {
-            const targetIdx = idx + direction;
-            if (targetIdx < 0 || targetIdx >= db[currentClass].length) return;
-            const temp = db[currentClass][idx];
-            db[currentClass][idx] = db[currentClass][targetIdx];
-            db[currentClass][targetIdx] = temp;
-            saveToCloud(); renderClassroom();
-        }
-        function openBehaviorSettings() { renderBHManager(); openModal('behaviorModal'); }
-        function renderBHManager() {
-            document.getElementById('bhManagerList').innerHTML = behaviors.map((b, i) => `
-                <div class="flex justify-between items-center bg-slate-50 p-3 rounded-xl mb-1">
-                    <span class="text-xs font-bold">${b.name} (${b.point})</span>
-                    <button onclick="behaviors.splice(${i}, 1); saveToCloud(); renderBHManager();" class="text-red-400">✕</button>
-                </div>
-            `).join('');
-        }
-        function addNewBH() {
-            const n = document.getElementById('newBHName').value.trim();
-            const p = parseInt(document.getElementById('newBHPoint').value);
-            if(n && !isNaN(p)) { behaviors.push({ name: n, point: p }); saveToCloud(); renderBHManager(); }
-        }
-        function openBatchRename() {
-            const names = db[currentClass].map(s => s.name).join('\n');
-            document.getElementById('batchNameInput').value = names;
-            openModal('batchRenameModal');
-        }
-        function submitBatchRename() {
-            const input = document.getElementById('batchNameInput').value.trim();
-            if(!input) return;
-            const newNames = input.split('\n').map(n => n.trim()).filter(n => n !== "");
-            newNames.forEach((name, idx) => {
-                if(db[currentClass][idx]) { db[currentClass][idx].name = name; } 
-                else { db[currentClass].push({ name: name, logs: [], icon: null }); }
-            });
-            if(newNames.length < db[currentClass].length) {
-                if(confirm("學生數量變少了，要刪除多出的學生嗎？")) { db[currentClass] = db[currentClass].slice(0, newNames.length); }
-            }
-            saveToCloud(); renderClassroom(); closeModal('batchRenameModal');
-        }
+// ==========================================
+// 4. 評分與行為管理
+// ==========================================
 
-        // 啟動
-        syncFromCloud();
+function showScoreModal(idx) {
+    const s = db[currentClass][idx];
+    document.getElementById('modalStudentName').innerText = s.name;
+    const list = document.getElementById('behaviorList');
+    list.innerHTML = behaviors.map(b => `
+        <button onclick="addPoint(${idx}, '${b.name}', ${b.point})" 
+            class="p-4 rounded-2xl font-bold text-white transition active:scale-95 ${b.point >= 0 ? 'bg-blue-400 hover:bg-blue-500' : 'bg-red-400 hover:bg-red-500'}">
+            ${b.name} (${b.point >= 0 ? '+' : ''}${b.point})
+        </button>
+    `).join('');
+    openModal('scoreModal');
+}
+
+function addPoint(sIdx, bName, pt) {
+    const now = new Date();
+    // 建立與 GAS 匹配的時間格式 M/D H:m
+    const timeStr = `${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+    
+    db[currentClass][sIdx].logs.push({ name: bName, point: pt, time: timeStr });
+    saveDB();
+    renderClassroom();
+    closeModal('scoreModal');
+    showToast(`${db[currentClass][sIdx].name}: ${bName} ${pt >= 0 ? '+' : ''}${pt}`);
+}
+
+function openBehaviorSettings() { renderBHManager(); openModal('behaviorModal'); }
+
+function renderBHManager() {
+    document.getElementById('bhManagerList').innerHTML = behaviors.map((b, i) => `
+        <div class="flex justify-between items-center bg-slate-50 p-3 rounded-xl mb-1">
+            <span class="text-sm font-bold text-slate-600">${b.name} (${b.point})</span>
+            <button onclick="behaviors.splice(${i}, 1); saveBehaviors(); renderBHManager();" class="text-red-400 p-2">✕</button>
+        </div>
+    `).join('');
+}
+
+function addNewBH() {
+    const n = document.getElementById('newBHName').value.trim();
+    const p = parseInt(document.getElementById('newBHPoint').value);
+    if(n && !isNaN(p)) {
+        behaviors.push({ name: n, point: p });
+        saveBehaviors();
+        renderBHManager();
+        document.getElementById('newBHName').value = '';
+        document.getElementById('newBHPoint').value = '1';
+    }
+}
+
+// ==========================================
+// 5. 通用 UI 函式
+// ==========================================
+
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.innerText = msg;
+    t.style.display = 'block';
+    setTimeout(() => t.style.display = 'none', 3000);
+}
     </script>
 </body>
 </html>
