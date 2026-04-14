@@ -9,21 +9,16 @@
     <style>
         body { font-family: 'Nunito', 'Noto Sans TC', sans-serif; background: #f8fafc; min-height: 100vh; overflow: hidden; }
         .bubble-card { backdrop-filter: blur(8px); border-radius: 2rem; border: 1px solid rgba(255, 255, 255, 0.5); transition: 0.3s; }
-        .bubble-pink { background: #fee2e2; } .bubble-blue { background: #e0f2fe; }
-        .bubble-green { background: #dcfce7; } .bubble-purple { background: #f3e8ff; }
-        .bubble-orange { background: #ffedd5; }
         .student-card { transition: 0.2s; cursor: pointer; border-radius: 1.25rem; background: white; border: 1px solid #f1f5f9; }
         .student-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px -5px rgba(0,0,0,0.1); }
         .modal { transition: opacity 0.25s ease; pointer-events: none; opacity: 0; }
         .modal.active { pointer-events: auto; opacity: 1; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
     </style>
 </head>
 <body>
     <script>
         // ==========================================
-        // 1. 設定區：填入您的 GAS 部署網址
+        // 1. 設定區：請務必填入您的 GAS 網址
         // ==========================================
         const API_URL = "https://script.google.com/macros/s/AKfycbzJGTyhl6HqxiBsvIUJoScierNaKeIH_acWb59FQYoQov5vRN-1-OuyaLNfF66tHLU/exec"; 
 
@@ -33,17 +28,15 @@
         let currentStudentIdx = null;
         let isTeacherMode = false;
 
-        // --- 核心同步引擎 (分層版) ---
+        // --- 核心同步引擎 ---
         async function saveToCloud() {
             if (!API_URL || API_URL === "") return;
             
-            // 容量防禦：傳輸前縮減 logs 筆數，防止單一儲存格超過 5 萬字
+            // 資料縮減防禦
             const dbClone = JSON.parse(JSON.stringify(db));
             for (let cls in dbClone) {
                 dbClone[cls].forEach(s => {
-                    if (s.logs && s.logs.length > 30) {
-                        s.logs = s.logs.slice(-20); // 僅保留最新的 20 筆紀錄
-                    }
+                    if (s.logs && s.logs.length > 30) s.logs = s.logs.slice(-20);
                 });
             }
 
@@ -54,31 +47,25 @@
                 });
                 const res = await response.json();
                 if (res.status === 'success') {
-                    showToast("✅ 雲端同步成功");
-                    localStorage.setItem('classDB', JSON.stringify(db));
+                    showToast("✅ 雲端同步完成");
                 }
             } catch (e) {
-                showToast("❌ 同步失敗，請檢查網路");
-                console.error(e);
+                showToast("❌ 同步失敗");
             }
         }
 
         async function loadFromCloud() {
             if (!API_URL || API_URL === "") return;
-            showToast("⏳ 正在從雲端載入...");
+            showToast("⏳ 載入中...");
             try {
                 const response = await fetch(API_URL);
                 const data = await response.json();
-                
-                // 整合分頁資料
-                if (data.db && Object.keys(data.db).length > 0) db = data.db;
-                if (data.behaviors && data.behaviors.length > 0) behaviors = data.behaviors;
-                
+                if (data.db) db = data.db;
+                if (data.behaviors) behaviors = data.behaviors;
                 renderClassList();
-                if (currentClass) renderClassroom();
                 showToast("✅ 載入成功");
             } catch (e) {
-                showToast("⚠️ 載入失敗，使用本地存檔");
+                showToast("⚠️ 使用本地存檔");
                 const local = localStorage.getItem('classDB');
                 if (local) db = JSON.parse(local);
                 renderClassList();
@@ -87,10 +74,36 @@
 
         function saveDB() {
             localStorage.setItem('classDB', JSON.stringify(db));
-            saveToCloud(); // 每次變動自動同步
+            saveToCloud(); 
         }
 
-        // --- 介面邏輯 ---
+        // --- 修正後的建立班級功能 ---
+        function addClass() {
+            const n = prompt("請輸入新班級名稱 (例如: 101):");
+            if (n) {
+                const trimmedName = n.trim();
+                if (trimmedName === "") return;
+                if (db[trimmedName]) {
+                    showToast("❌ 班級已存在");
+                    return;
+                }
+                // 初始化班級資料
+                db[trimmedName] = []; 
+                saveDB();         // 儲存並同步
+                renderClassList(); // 重新渲染介面
+                showToast(`✅ 已建立班級 ${trimmedName}`);
+            }
+        }
+
+        function deleteClass(name) {
+            if (confirm(`確定要刪除 ${name} 班嗎？此動作無法復原。`)) {
+                delete db[name];
+                saveDB();
+                renderClassList();
+            }
+        }
+
+        // --- 介面渲染 ---
         function showToast(msg) {
             const t = document.getElementById('toast');
             t.innerText = msg;
@@ -102,7 +115,7 @@
             const container = document.getElementById('classList');
             container.innerHTML = Object.keys(db).map(name => `
                 <div class="relative group">
-                    <button onclick="selectClass('${name}')" class="w-full bubble-card bg-white p-6 text-xl font-black text-slate-700 hover:scale-105 active:scale-95 shadow-sm">
+                    <button onclick="selectClass('${name}')" class="w-full bubble-card bg-white p-6 text-xl font-black text-slate-700 hover:scale-105 shadow-sm">
                         ${name}
                     </button>
                     ${isTeacherMode ? `<button onclick="deleteClass('${name}')" class="absolute -top-2 -right-2 bg-red-400 text-white w-8 h-8 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">✕</button>` : ''}
@@ -128,7 +141,7 @@
             const container = document.getElementById('studentGrid');
             container.innerHTML = db[currentClass].map((s, i) => `
                 <div onclick="openScoreModal(${i})" class="student-card p-4 text-center shadow-sm relative">
-                    <div class="text-4xl mb-2">${s.icon || '🦊'}</div>
+                    <div class="text-4xl mb-2">${s.icon || '👤'}</div>
                     <div class="font-black text-slate-700 truncate">${s.name}</div>
                     <div class="mt-2 inline-block px-4 py-1 bg-blue-50 text-blue-600 rounded-full font-black text-sm">
                         ${s.totalPoint || 0}
@@ -140,27 +153,31 @@
                 </button>` : '');
         }
 
+        function addStudent() {
+            const n = prompt("學生姓名:");
+            if(n) {
+                db[currentClass].push({name: n, totalPoint: 0, logs: [], icon: '🦊'});
+                saveDB();
+                renderClassroom();
+            }
+        }
+
         function addLog(bName, p) {
             const s = db[currentClass][currentStudentIdx];
             s.totalPoint = (s.totalPoint || 0) + p;
-            const now = new Date();
-            const time = `${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${now.getMinutes().toString().padStart(2,'0')}`;
-            s.logs.push({ name: bName, point: p, time });
+            s.logs.push({ name: bName, point: p, time: new Date().toLocaleString() });
             closeModal('scoreModal');
             saveDB();
             renderClassroom();
         }
 
-        // --- 管理員功能 ---
         function toggleTeacherMode() {
             const pw = prompt("管理員密碼：");
             if(pw === "admin1130") {
                 isTeacherMode = !isTeacherMode;
-                showToast(isTeacherMode ? "🔓 已開啟管理員模式" : "🔒 已關閉管理員模式");
+                showToast(isTeacherMode ? "🔓 管理員模式" : "🔒 學生模式");
                 renderClassList();
                 if(currentClass) renderClassroom();
-            } else {
-                showToast("❌ 密碼錯誤");
             }
         }
 
@@ -171,33 +188,23 @@
             document.getElementById('modalStudentName').innerText = db[currentClass][idx].name;
             const list = document.getElementById('behaviorList');
             list.innerHTML = behaviors.map(b => `
-                <button onclick="addLog('${b.name}', ${b.point})" class="p-4 ${b.point > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'} rounded-2xl font-black text-sm hover:opacity-80">
+                <button onclick="addLog('${b.name}', ${b.point})" class="p-4 ${b.point > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'} rounded-2xl font-black text-sm">
                     ${b.name} (${b.point > 0 ? '+' : ''}${b.point})
                 </button>
             `).join('');
             openModal('scoreModal');
         }
 
-        function addClass() {
-            const n = prompt("班級名稱 (如: 101):");
-            if(n && !db[n]) { db[n] = []; saveDB(); renderClassList(); }
-        }
-
-        function addStudent() {
-            const n = prompt("學生姓名:");
-            if(n) { db[currentClass].push({name: n, totalPoint: 0, logs: [], icon: '🦊'}); saveDB(); renderClassroom(); }
-        }
-
         window.onload = loadFromCloud;
     </script>
 
-    <div id="toast" class="fixed top-8 left-1/2 -translate-x-1/2 bg-slate-800/90 text-white px-8 py-3 rounded-full font-black text-sm transition-all duration-300 opacity-0 z-50 shadow-2xl"></div>
+    <div id="toast" class="fixed top-8 left-1/2 -translate-x-1/2 bg-slate-800/90 text-white px-8 py-3 rounded-full font-black text-sm transition-opacity opacity-0 z-50"></div>
 
     <div class="p-6 max-w-6xl mx-auto h-screen flex flex-col">
         <div id="mainMenu" class="flex-1 flex flex-col justify-center">
             <div class="flex justify-between items-center mb-10">
-                <h1 class="text-4xl font-black text-slate-800 tracking-tight">Class Manager<span class="text-blue-500 ml-2 text-xl font-bold">Cloud</span></h1>
-                <button onclick="toggleTeacherMode()" class="bg-white p-4 rounded-3xl shadow-sm text-slate-400 hover:text-slate-600 transition-colors">⚙️</button>
+                <h1 class="text-4xl font-black text-slate-800">Class Manager Cloud</h1>
+                <button onclick="toggleTeacherMode()" class="bg-white p-4 rounded-3xl shadow-sm text-slate-400">⚙️</button>
             </div>
             <div id="classList" class="grid grid-cols-2 md:grid-cols-4 gap-6 overflow-y-auto pr-2"></div>
         </div>
@@ -205,24 +212,21 @@
         <div id="classroom" class="hidden flex-1 flex flex-col">
             <div class="flex items-center justify-between mb-8">
                 <div class="flex items-center gap-4">
-                    <button onclick="location.reload()" class="bg-white p-4 rounded-3xl shadow-sm hover:bg-slate-50">🏠</button>
+                    <button onclick="location.reload()" class="bg-white p-4 rounded-3xl shadow-sm">🏠</button>
                     <h2 id="displayClassName" class="text-3xl font-black text-slate-800"></h2>
                 </div>
-                <div class="flex gap-2">
-                    <button onclick="saveToCloud()" class="bg-blue-500 text-white px-8 py-4 rounded-3xl font-black shadow-lg shadow-blue-200 active:scale-95 transition-all">☁ 手動同步</button>
-                </div>
+                <button onclick="saveToCloud()" class="bg-blue-500 text-white px-8 py-4 rounded-3xl font-black">☁ 同步</button>
             </div>
-            <div id="studentGrid" class="flex-1 grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-4 overflow-y-auto pb-10 pr-2"></div>
+            <div id="studentGrid" class="flex-1 grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-4 overflow-y-auto pb-10"></div>
         </div>
     </div>
 
     <div id="scoreModal" class="modal fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-6 z-40">
-        <div class="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl">
-            <h3 id="modalStudentName" class="text-3xl font-black text-center mb-8 text-slate-800"></h3>
+        <div class="bg-white w-full max-w-sm rounded-[3rem] p-10">
+            <h3 id="modalStudentName" class="text-3xl font-black text-center mb-8"></h3>
             <div id="behaviorList" class="grid grid-cols-2 gap-4 mb-8"></div>
-            <button onclick="closeModal('scoreModal')" class="w-full text-slate-400 font-bold hover:text-slate-600 transition-colors">取消</button>
+            <button onclick="closeModal('scoreModal')" class="w-full text-slate-400 font-bold">取消</button>
         </div>
     </div>
-
 </body>
 </html>
