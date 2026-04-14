@@ -13,12 +13,11 @@
         .student-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .modal { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 100; }
         .modal.active { display: flex; }
-        #toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: #334155; color: white; padding: 10px 20px; border-radius: 12px; z-index: 1000; display: none; font-size: 14px; }
+        #toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: #334155; color: white; padding: 10px 20px; border-radius: 12px; z-index: 1000; display: none; font-size: 14px; opacity: 0; transition: 0.3s; }
         #loadingOverlay { position: fixed; inset: 0; background: rgba(255,255,255,0.8); z-index: 9999; display: none; flex-direction: column; align-items: center; justify-content: center; font-weight: bold; color: #6366f1; }
         .admin-only { display: none !important; }
         body.admin-mode .admin-only { display: flex !important; }
         body.admin-mode .admin-only-inline { display: inline-block !important; }
-        /* 旋轉動畫 */
         .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #6366f1; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin-bottom: 10px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
@@ -33,10 +32,10 @@
 
     <header class="bg-white/90 border-b border-slate-200 px-8 py-4 flex justify-between items-center z-[60]">
         <div class="flex items-center gap-4">
-            <h1 class="text-xl font-black text-slate-800 tracking-tight">CLASS MANAGER <span class="text-[10px] text-indigo-500 font-bold ml-1">PRO</span></h1>
+            <h1 class="text-xl font-black text-slate-800 tracking-tight">CLASS MANAGER <span class="text-[10px] text-indigo-500 font-bold ml-1">CLOUD V2</span></h1>
         </div>
         <div class="flex gap-2">
-            <button onclick="syncFromCloud()" class="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl font-bold text-xs hover:bg-emerald-100 transition">🔄 同步雲端</button>
+            <button onclick="syncFromCloud()" class="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl font-bold text-xs hover:bg-emerald-100 transition">🔄 立即同步</button>
             <button onclick="saveToCloud()" class="admin-only-inline hidden bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs shadow-md">💾 儲存上傳</button>
             <button onclick="askAdminPassword()" id="adminToggleBtn" class="bg-slate-100 text-slate-600 px-4 py-2 rounded-xl font-bold text-xs">🔒 老師模式</button>
         </div>
@@ -70,7 +69,7 @@
 
     <div id="scoreModal" class="modal">
         <div class="bg-white p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl">
-            <h3 id="modalStudentName" class="text-2xl font-black mb-6 text-center text-slate-800"></h3>
+            <h3 id="modalStudentName" class="text-2xl font-black mb-6 text-center text-slate-800">評分項目</h3>
             <div id="behaviorList" class="grid grid-cols-2 gap-3"></div>
             <button onclick="closeModal('scoreModal')" class="w-full mt-6 py-4 bg-slate-100 text-slate-400 font-bold rounded-2xl">取消</button>
         </div>
@@ -92,8 +91,8 @@
     </div>
 
     <script>
-        // 請確保這裡的 API 網址正確
         const API_URL = "https://script.google.com/macros/s/AKfycbwPGEfW3In-8UoMpf3CzygVw3nUOiFIBVO7jNiuqvCSFBcs-mR5G_rLsucE8_1X0xo/exec"; 
+        const ANIMALS = ['🦁','🐯','🦒','🦊','🐨','🐼','🐻','🐰','🐹','🐭','🐸','🐧','🐦','🐤','🦉','🦄','🐴','🐮','🐷','🐙','🦆','🐊','🐍','🐳','🐬','🐶','🐠','🦀','🦋','🐝','🐞','🐿️','🦍','🐘','🦏','🐪','🦓','🦘','🐱','🐶','🦖','🦕','🐲','🌵','🍎','🍩','🚀'];
         
         let db = {};
         let behaviors = [];
@@ -101,35 +100,24 @@
         let isAdmin = false;
 
         window.onload = async () => {
-            // 優先讀取本地，讓使用者立刻能操作
+            // 優先載入本地資料，確保開啟瞬間有內容
             const localDB = localStorage.getItem('classroomDB');
             const localBH = localStorage.getItem('classroomBehaviors');
             if (localDB) db = JSON.parse(localDB);
             if (localBH) behaviors = JSON.parse(localBH);
             
             renderHub();
-            
-            // 背景同步，不阻塞使用者
+            // 背景自動同步，解決換裝置問題
             syncFromCloud(true); 
         };
 
-        // --- 優化後的同步功能 ---
+        // --- 同步邏輯 ---
         async function syncFromCloud(isSilent = false) {
             if(!isSilent) document.getElementById('loadingOverlay').style.display = 'flex';
             try {
-                // 增加 timeout 機制
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒逾時
-
-                const response = await fetch(`${API_URL}?t=${Date.now()}`, { 
-                    redirect: 'follow',
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-
+                const response = await fetch(`${API_URL}?t=${Date.now()}`, { redirect: 'follow' });
                 const data = await response.json();
                 if (data.db) {
-                    // 聰明合併：如果雲端班級數較多，才覆蓋本地
                     db = data.db;
                     behaviors = data.behaviors || [];
                     saveLocal();
@@ -138,8 +126,8 @@
                     if(!isSilent) showToast("☁️ 雲端同步成功");
                 }
             } catch (e) {
-                if(!isSilent) showToast("❌ 同步逾時，已切換至離線模式");
-                console.error("Sync error:", e);
+                if(!isSilent) showToast("❌ 同步逾時，使用離線資料");
+                console.error("Sync Error:", e);
             } finally {
                 document.getElementById('loadingOverlay').style.display = 'none';
             }
@@ -147,26 +135,20 @@
 
         async function saveToCloud() {
             document.getElementById('loadingOverlay').style.display = 'flex';
-            document.getElementById('loadingText').innerText = "上傳中，請稍候...";
-            
+            document.getElementById('loadingText').innerText = "雲端儲存中...";
             try {
-                // 優化：只傳送必要的資料
                 const response = await fetch(API_URL, {
                     method: 'POST',
-                    mode: 'no-cors', // 提高傳送速度，不等待完整回應
                     body: JSON.stringify({ db, behaviors }),
                     redirect: 'follow'
                 });
-                
-                // 因為使用 no-cors，這裡會假設成功
-                showToast("🚀 資料已送出，背景處理中");
+                const result = await response.json();
+                if (result.status === "success") showToast("🚀 資料已成功存至雲端");
             } catch (e) {
-                showToast("❌ 上傳連線失敗");
+                showToast("❌ 上傳失敗");
             } finally {
-                setTimeout(() => {
-                    document.getElementById('loadingOverlay').style.display = 'none';
-                    document.getElementById('loadingText').innerText = "雲端同步中...";
-                }, 1000);
+                document.getElementById('loadingOverlay').style.display = 'none';
+                document.getElementById('loadingText').innerText = "雲端同步中...";
             }
         }
 
@@ -195,7 +177,7 @@
                         <div class="font-bold text-slate-700 truncate">${s.name}</div>
                         <div class="text-2xl font-black ${total >= 0 ? 'text-blue-500' : 'text-red-500'}">${total}</div>
                         <div class="admin-only hidden justify-center gap-2 mt-2">
-                            <button onclick="event.stopPropagation(); editStudent(${i})" class="text-[10px] text-slate-400 underline">改名</button>
+                            <button onclick="event.stopPropagation(); editStudent(${i})" class="text-[10px] text-slate-400 underline">改名/圖示</button>
                             <button onclick="event.stopPropagation(); moveStudent(${i}, -1)" class="text-[10px] text-slate-400">◀</button>
                             <button onclick="event.stopPropagation(); moveStudent(${i}, 1)" class="text-[10px] text-slate-400">▶</button>
                         </div>
@@ -204,7 +186,7 @@
             }).join('');
         }
 
-        // --- 功能函式 ---
+        // --- 互動功能 ---
         function enterClass(name) {
             currentClass = name;
             document.getElementById('currentClassName').innerText = name;
@@ -219,7 +201,7 @@
             const s = db[currentClass][idx];
             document.getElementById('modalStudentName').innerText = s.name;
             const list = document.getElementById('behaviorList');
-            list.innerHTML = (behaviors.length ? behaviors : [{name:'未設定項目', point:0}]).map(b => `
+            list.innerHTML = behaviors.map(b => `
                 <button onclick="addPoint(${idx}, '${b.name}', ${b.point})" 
                     class="p-4 rounded-2xl font-bold text-white transition active:scale-95 ${b.point >= 0 ? 'bg-blue-400 hover:bg-blue-500' : 'bg-red-400 hover:bg-red-500'}">
                     ${b.name} (${b.point >= 0 ? '+' : ''}${b.point})
@@ -239,7 +221,7 @@
             showToast(`${db[currentClass][sIdx].name}: ${bName} ${pt >= 0 ? '+' : ''}${pt}`);
         }
 
-        // --- 管理功能 ---
+        // --- 管理者功能 ---
         function askAdminPassword() {
             if(isAdmin) {
                 isAdmin = false;
@@ -258,23 +240,36 @@
             }
         }
 
+        function editStudent(i) {
+            const s = db[currentClass][i];
+            const newName = prompt("修改姓名:", s.name);
+            if(newName) s.name = newName;
+            
+            const randomIcon = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+            const newIcon = prompt("輸入新圖示 (Emoji) 或取消保持現狀:", s.icon || randomIcon);
+            if(newIcon) s.icon = newIcon;
+            
+            saveLocal();
+            renderClassroom();
+        }
+
         function addClass() {
-            const name = prompt("班級名稱:");
+            const name = prompt("班級名稱 (例如: 301):");
             if(name && !db[name]) { db[name] = []; saveLocal(); renderHub(); }
         }
 
         function deleteClass(name) {
-            if(confirm(`確定刪除 ${name}？`)) { delete db[name]; saveLocal(); renderHub(); }
+            if(confirm(`確定刪除 ${name} 班嗎？`)) { delete db[name]; saveLocal(); renderHub(); }
         }
 
         function addStudent() {
             const name = prompt("學生姓名:");
-            if(name) { db[currentClass].push({name, logs: [], icon: '👤'}); saveLocal(); renderClassroom(); }
-        }
-
-        function editStudent(i) {
-            const n = prompt("修改姓名:", db[currentClass][i].name);
-            if(n) { db[currentClass][i].name = n; saveLocal(); renderClassroom(); }
+            if(name) { 
+                const icon = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+                db[currentClass].push({name, logs: [], icon: icon}); 
+                saveLocal(); 
+                renderClassroom(); 
+            }
         }
 
         function moveStudent(idx, dir) {
@@ -301,7 +296,7 @@
             if(n && !isNaN(p)) { behaviors.push({name: n, point: p}); saveLocal(); renderBHManager(); }
         }
 
-        // --- 工具 ---
+        // --- 通用工具 ---
         function saveLocal() {
             localStorage.setItem('classroomDB', JSON.stringify(db));
             localStorage.setItem('classroomBehaviors', JSON.stringify(behaviors));
@@ -310,8 +305,12 @@
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
         function showToast(msg) {
             const t = document.getElementById('toast');
-            t.innerText = msg; t.style.display = 'block'; t.style.opacity = '1';
-            setTimeout(() => { t.style.opacity = '0'; setTimeout(()=>t.style.display='none', 300); }, 3000);
+            t.innerText = msg; t.style.display = 'block';
+            setTimeout(() => { t.style.opacity = '1'; }, 10);
+            setTimeout(() => { 
+                t.style.opacity = '0'; 
+                setTimeout(() => t.style.display = 'none', 300);
+            }, 3000);
         }
     </script>
 </body>
