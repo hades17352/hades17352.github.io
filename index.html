@@ -182,7 +182,7 @@
 
     <script>
         // --- 核心同步設定 ---
-        const API_URL = "https://script.google.com/macros/s/AKfycbw1SznOv1qKvxQp_BO-nnXjrPxgRJipoAmtyz2yf5aRy6zremJIB8OmJ17naY7hw3fV/exec"; 
+        const API_URL = "https://script.google.com/macros/s/AKfycbzd-vhFBRG8CcqUFnjR2rEhLVPhWQbYS6yjdPbf66o0Co563x0fhrvUsuxG2LnE8_M/exec"; 
 
         const ANIMALS = ['🦁','🐯','🦒','🦊','🐨','🐼','🐻','🐰','🐹','🐭','🐸','🐧','🐦','🐤','🦉','🦄','🐴','🐮','🐷','🐙','🦆','🐊','🐍','🐳','🐬','🐶','🐠','🦀','🦋','🐝','🐞','🐿️','🦍','🐘','🦏','🐪','🦓','🦘','🐱','🐶','🦖','🦕','🐲','🌵','🍎','🍩','🚀'];
         const COLORS = ['bubble-pink', 'bubble-blue', 'bubble-green', 'bubble-purple', 'bubble-orange'];
@@ -210,18 +210,43 @@
             }
         }
 
-        async function saveToCloud() {
-            showToast("⏳ 雲端儲存中...");
-            try {
-                await fetch(API_URL, { method: 'POST', body: JSON.stringify({ db, behaviors }) });
-                showToast("✅ 已儲存至雲端");
-            } catch (e) {
-                showToast("❌ 儲存失敗");
+async function saveToCloud() {
+    if (!API_URL) return;
+    
+    // 主動防禦：傳輸前縮減每個學生的紀錄筆數，避免字串過大
+    for (let cls in db) {
+        db[cls].forEach(student => {
+            if (student.logs && student.logs.length > 30) {
+                student.logs = student.logs.slice(-20); // 只保留最新 20 筆
             }
-        }
+        });
+    }
 
-        const saveDB = () => saveToCloud();
-        const saveBehaviors = () => saveToCloud();
+    showToast("⏳ 雲端同步中...");
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({ db, behaviors })
+        });
+        const res = await response.json();
+        if (res.status === 'success') {
+            showToast("✅ 分頁儲存成功");
+        }
+    } catch (e) {
+        showToast("❌ 同步失敗，請檢查網路");
+    }
+}
+
+// 新增匯出備份功能 (可綁定在 UI 按鈕上)
+function exportLocalBackup() {
+    const data = JSON.stringify({ db, behaviors }, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+}
 
         // UI 助手
         const openModal = (id) => { document.getElementById(id).classList.replace('hidden', 'flex'); };
