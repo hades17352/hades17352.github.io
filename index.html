@@ -23,16 +23,21 @@
         const API_URL = "https://script.google.com/macros/s/AKfycbzJGTyhl6HqxiBsvIUJoScierNaKeIH_acWb59FQYoQov5vRN-1-OuyaLNfF66tHLU/exec"; 
 
         let db = {};
-        let behaviors = [];
+        let behaviors = [
+            { name: "準時進教室", point: 1 },
+            { name: "勇於發言", point: 2 },
+            { name: "未帶課本", point: -1 },
+            { name: "秩序干擾", point: -2 }
+        ];
         let currentClass = "";
         let currentStudentIdx = null;
         let isTeacherMode = false;
 
         // --- 核心同步引擎 ---
         async function saveToCloud() {
-            if (!API_URL || API_URL === "") return;
+            if (!API_URL || API_URL === "" || API_URL.includes("您的")) return;
             
-            // 資料縮減防禦
+            // 容量防禦：傳輸前縮減筆數
             const dbClone = JSON.parse(JSON.stringify(db));
             for (let cls in dbClone) {
                 dbClone[cls].forEach(s => {
@@ -46,24 +51,21 @@
                     body: JSON.stringify({ db: dbClone, behaviors: behaviors })
                 });
                 const res = await response.json();
-                if (res.status === 'success') {
-                    showToast("✅ 雲端同步完成");
-                }
+                if (res.status === 'success') showToast("✅ 雲端同步成功");
             } catch (e) {
                 showToast("❌ 同步失敗");
             }
         }
 
         async function loadFromCloud() {
-            if (!API_URL || API_URL === "") return;
-            showToast("⏳ 載入中...");
+            if (!API_URL || API_URL === "" || API_URL.includes("您的")) return;
             try {
                 const response = await fetch(API_URL);
                 const data = await response.json();
-                if (data.db) db = data.db;
-                if (data.behaviors) behaviors = data.behaviors;
+                if (data.db && Object.keys(data.db).length > 0) db = data.db;
+                if (data.behaviors && data.behaviors.length > 0) behaviors = data.behaviors;
                 renderClassList();
-                showToast("✅ 載入成功");
+                showToast("✅ 資料載入成功");
             } catch (e) {
                 showToast("⚠️ 使用本地存檔");
                 const local = localStorage.getItem('classDB');
@@ -77,33 +79,7 @@
             saveToCloud(); 
         }
 
-        // --- 修正後的建立班級功能 ---
-        function addClass() {
-            const n = prompt("請輸入新班級名稱 (例如: 101):");
-            if (n) {
-                const trimmedName = n.trim();
-                if (trimmedName === "") return;
-                if (db[trimmedName]) {
-                    showToast("❌ 班級已存在");
-                    return;
-                }
-                // 初始化班級資料
-                db[trimmedName] = []; 
-                saveDB();         // 儲存並同步
-                renderClassList(); // 重新渲染介面
-                showToast(`✅ 已建立班級 ${trimmedName}`);
-            }
-        }
-
-        function deleteClass(name) {
-            if (confirm(`確定要刪除 ${name} 班嗎？此動作無法復原。`)) {
-                delete db[name];
-                saveDB();
-                renderClassList();
-            }
-        }
-
-        // --- 介面渲染 ---
+        // --- 介面邏輯 ---
         function showToast(msg) {
             const t = document.getElementById('toast');
             t.innerText = msg;
@@ -120,11 +96,31 @@
                     </button>
                     ${isTeacherMode ? `<button onclick="deleteClass('${name}')" class="absolute -top-2 -right-2 bg-red-400 text-white w-8 h-8 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">✕</button>` : ''}
                 </div>
-            `).join('') + `
+            `).join('') + (isTeacherMode ? `
                 <button onclick="addClass()" class="bubble-card border-2 border-dashed border-slate-200 p-6 text-slate-400 hover:border-blue-400 hover:text-blue-400 transition-all font-bold">
                     + 新增班級
-                </button>
-            `;
+                </button>` : '');
+        }
+
+        // 修正後的建立班級函式
+        function addClass() {
+            const n = prompt("請輸入班級名稱 (例如: 101):");
+            if (n && n.trim() !== "") {
+                const className = n.trim();
+                if (db[className]) return showToast("❌ 班級已重複");
+                db[className] = []; // 初始化空陣列
+                saveDB();           // 儲存並觸發雲端同步
+                renderClassList();  // 立即更新 UI
+                showToast(`✅ 已建立班級 ${className}`);
+            }
+        }
+
+        function deleteClass(name) {
+            if (confirm(`確定要刪除 ${name} 班嗎？`)) {
+                delete db[name];
+                saveDB();
+                renderClassList();
+            }
         }
 
         function selectClass(name) {
@@ -140,12 +136,13 @@
         function renderClassroom() {
             const container = document.getElementById('studentGrid');
             container.innerHTML = db[currentClass].map((s, i) => `
-                <div onclick="openScoreModal(${i})" class="student-card p-4 text-center shadow-sm relative">
+                <div onclick="openScoreModal(${i})" class="student-card p-4 text-center shadow-sm relative group">
                     <div class="text-4xl mb-2">${s.icon || '👤'}</div>
                     <div class="font-black text-slate-700 truncate">${s.name}</div>
                     <div class="mt-2 inline-block px-4 py-1 bg-blue-50 text-blue-600 rounded-full font-black text-sm">
                         ${s.totalPoint || 0}
                     </div>
+                    ${isTeacherMode ? `<button onclick="event.stopPropagation(); deleteStudent(${i})" class="absolute top-1 right-1 text-red-300 opacity-0 group-hover:opacity-100">✕</button>` : ''}
                 </div>
             `).join('') + (isTeacherMode ? `
                 <button onclick="addStudent()" class="border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center text-slate-300 hover:bg-white h-32">
@@ -162,6 +159,14 @@
             }
         }
 
+        function deleteStudent(idx) {
+            if(confirm("確定刪除該學生？")) {
+                db[currentClass].splice(idx, 1);
+                saveDB();
+                renderClassroom();
+            }
+        }
+
         function addLog(bName, p) {
             const s = db[currentClass][currentStudentIdx];
             s.totalPoint = (s.totalPoint || 0) + p;
@@ -173,11 +178,13 @@
 
         function toggleTeacherMode() {
             const pw = prompt("管理員密碼：");
-            if(pw === "admin1130") {
+            if(pw === "admin") {
                 isTeacherMode = !isTeacherMode;
-                showToast(isTeacherMode ? "🔓 管理員模式" : "🔒 學生模式");
+                showToast(isTeacherMode ? "🔓 管理員模式已開啟" : "🔒 已切換為學生模式");
                 renderClassList();
                 if(currentClass) renderClassroom();
+            } else {
+                showToast("❌ 密碼錯誤");
             }
         }
 
@@ -212,10 +219,10 @@
         <div id="classroom" class="hidden flex-1 flex flex-col">
             <div class="flex items-center justify-between mb-8">
                 <div class="flex items-center gap-4">
-                    <button onclick="location.reload()" class="bg-white p-4 rounded-3xl shadow-sm">🏠</button>
+                    <button onclick="location.reload()" class="bg-white p-4 rounded-3xl shadow-sm hover:bg-slate-50">🏠</button>
                     <h2 id="displayClassName" class="text-3xl font-black text-slate-800"></h2>
                 </div>
-                <button onclick="saveToCloud()" class="bg-blue-500 text-white px-8 py-4 rounded-3xl font-black">☁ 同步</button>
+                <button onclick="saveToCloud()" class="bg-blue-500 text-white px-8 py-4 rounded-3xl font-black shadow-lg shadow-blue-200">☁ 同步</button>
             </div>
             <div id="studentGrid" class="flex-1 grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-4 overflow-y-auto pb-10"></div>
         </div>
