@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>班級管理系統 V26.4.0 Cloud Pro</title>
+    <title>班級管理系統 V26.5.0 Cloud Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
     <style>
@@ -70,10 +70,7 @@
 
     <div id="statsModal" class="modal">
         <div class="bg-white p-8 rounded-[2rem] w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl">
-            <h3 class="text-2xl font-black mb-6 text-slate-800 flex justify-between">
-                <span>📊 班級加減分總表</span>
-                <button onclick="exportToExcel()" class="text-xs bg-emerald-500 text-white px-3 py-1 rounded-lg">匯出 Excel 格式</button>
-            </h3>
+            <h3 class="text-2xl font-black mb-6 text-slate-800">📊 班級加減分總表</h3>
             <table class="w-full text-left border-collapse">
                 <thead>
                     <tr class="border-b-2 border-slate-100">
@@ -89,7 +86,7 @@
     </div>
 
     <div id="scoreModal" class="modal"><div class="bg-white p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl text-center"><h3 id="modalStudentName" class="text-2xl font-black mb-6 text-slate-800"></h3><div id="behaviorList" class="grid grid-cols-2 gap-3"></div><button onclick="closeModal('scoreModal')" class="w-full mt-6 py-4 bg-slate-100 text-slate-400 font-bold rounded-2xl">取消</button></div></div>
-    <div id="behaviorModal" class="modal"><div class="bg-white p-8 rounded-[2rem] w-full max-w-sm shadow-2xl"><h3 class="font-black mb-6 text-xl text-slate-800">評分項目設定</h3><div id="bhManagerList" class="space-y-2 mb-6 max-h-56 overflow-y-auto pr-2"></div><div class="bg-slate-50 p-4 rounded-2xl"><div class="flex gap-2 mb-3"><input type="text" id="newBHName" placeholder="項目" class="flex-1 p-3 rounded-xl text-sm border-none shadow-sm outline-none"><input type="number" id="newBHPoint" value="1" class="w-16 p-3 rounded-xl text-sm text-center font-bold outline-none"></div><button onclick="addNewBH()" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold">新增項目</button></div><button onclick="closeModal('behaviorModal')" class="w-full mt-4 text-slate-400 font-bold text-xs uppercase">關閉</button></div></div>
+    <div id="behaviorModal" class="modal"><div class="bg-white p-8 rounded-[2rem] w-full max-w-sm shadow-2xl"><h3 class="font-black mb-6 text-xl text-slate-800">項目設定</h3><div id="bhManagerList" class="space-y-2 mb-6 max-h-56 overflow-y-auto pr-2"></div><div class="bg-slate-50 p-4 rounded-2xl"><div class="flex gap-2 mb-3"><input type="text" id="newBHName" placeholder="項目" class="flex-1 p-3 rounded-xl text-sm border-none shadow-sm outline-none"><input type="number" id="newBHPoint" value="1" class="w-16 p-3 rounded-xl text-sm text-center font-bold outline-none"></div><button onclick="addNewBH()" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold">新增項目</button></div><button onclick="closeModal('behaviorModal')" class="w-full mt-4 text-slate-400 font-bold text-xs uppercase">關閉</button></div></div>
 
     <script>
         const API_URL = "https://script.google.com/macros/s/AKfycbwPGEfW3In-8UoMpf3CzygVw3nUOiFIBVO7jNiuqvCSFBcs-mR5G_rLsucE8_1X0xo/exec"; 
@@ -100,7 +97,6 @@
         let currentClass = null;
         let isAdmin = false;
 
-        // 初始化
         window.onload = async () => {
             const localDB = localStorage.getItem('classroomDB');
             const localBH = localStorage.getItem('classroomBehaviors');
@@ -108,11 +104,9 @@
             if (localBH) behaviors = JSON.parse(localBH);
             
             renderHub();
-            // 重點：自動同步，確保換裝置後能自動下載資料
-            syncFromCloud(true); 
+            syncFromCloud(true); // 自動從雲端抓取，解決換裝置問題
         };
 
-        // --- 同步機制 ---
         async function syncFromCloud(isSilent = false) {
             if(!isSilent) document.getElementById('loadingOverlay').style.display = 'flex';
             try {
@@ -124,10 +118,10 @@
                     saveLocal();
                     renderHub();
                     if (currentClass) renderClassroom();
-                    if(!isSilent) showToast("✅ 雲端資料同步完成");
+                    if(!isSilent) showToast("✅ 雲端同步成功");
                 }
             } catch (e) {
-                if(!isSilent) showToast("⚠️ 同步失敗，請檢查網路");
+                if(!isSilent) showToast("⚠️ 同步失敗");
             } finally {
                 document.getElementById('loadingOverlay').style.display = 'none';
             }
@@ -141,7 +135,7 @@
                     body: JSON.stringify({ db, behaviors }),
                     redirect: 'follow'
                 });
-                showToast("🚀 已儲存至雲端");
+                showToast("🚀 儲存成功");
             } catch (e) {
                 showToast("❌ 儲存失敗");
             } finally {
@@ -149,7 +143,6 @@
             }
         }
 
-        // --- 渲染 ---
         function renderHub() {
             document.getElementById('viewHub').classList.remove('hidden');
             document.getElementById('viewClassroom').classList.add('hidden');
@@ -157,7 +150,7 @@
             list.innerHTML = Object.keys(db).map(cls => `
                 <div onclick="enterClass('${cls}')" class="bubble-card bg-white p-8 shadow-sm flex justify-between items-center cursor-pointer hover:bg-slate-50 transition">
                     <span class="text-2xl font-black text-slate-700">🏫 ${cls} 班</span>
-                    <button onclick="event.stopPropagation(); deleteClass('${cls}')" class="admin-only hidden text-red-300 hover:text-red-500">✕</button>
+                    <button onclick="event.stopPropagation(); deleteClass('${cls}')" class="admin-only hidden text-red-300">✕</button>
                 </div>
             `).join('');
         }
@@ -166,26 +159,27 @@
             const list = document.getElementById('studentList');
             list.innerHTML = db[currentClass].map((s, i) => {
                 const total = (s.logs || []).reduce((sum, l) => sum + l.point, 0);
+                // 這裡徹底移除預設👤，如果沒圖示就隨機補一個
+                const icon = s.icon && s.icon !== '👤' ? s.icon : ANIMALS[i % ANIMALS.length];
                 return `
                     <div class="student-card p-6 text-center" onclick="showScoreModal(${i})">
                         <div class="absolute top-2 left-3 text-[10px] font-bold text-slate-300">${i+1}</div>
-                        <div class="text-5xl mb-3">${s.icon || '👤'}</div>
+                        <div class="text-5xl mb-3">${icon}</div>
                         <div class="font-black text-slate-800 text-lg mb-1">${s.name}</div>
                         <div class="text-3xl font-black ${total >= 0 ? 'text-indigo-500' : 'text-rose-500'}">${total}</div>
                         <div class="admin-only hidden justify-center gap-2 mt-3">
-                            <button onclick="event.stopPropagation(); editStudent(${i})" class="text-[10px] bg-slate-100 px-2 py-1 rounded-md text-slate-500">編輯</button>
+                            <button onclick="event.stopPropagation(); editStudent(${i})" class="text-[10px] bg-slate-100 px-2 py-1 rounded-md">編輯</button>
                         </div>
                     </div>
                 `;
             }).join('');
         }
 
-        // --- 結算功能 (對應圖片三) ---
         function showStats() {
             const body = document.getElementById('statsTableBody');
             body.innerHTML = db[currentClass].map((s, i) => {
                 const total = (s.logs || []).reduce((sum, l) => sum + l.point, 0);
-                const lastLog = s.logs && s.logs.length ? s.logs[s.logs.length-1] : {name:'無', point:0};
+                const lastLog = s.logs && s.logs.length ? s.logs[s.logs.length-1] : {name:'-', point:0};
                 return `
                     <tr class="border-b border-slate-50">
                         <td class="py-4 font-bold text-slate-700">${i+1}. ${s.name}</td>
@@ -197,7 +191,6 @@
             openModal('statsModal');
         }
 
-        // --- 其餘邏輯 ---
         function enterClass(name) {
             currentClass = name;
             document.getElementById('currentClassName').innerText = name + " 教室";
@@ -213,7 +206,7 @@
             document.getElementById('modalStudentName').innerText = s.name;
             document.getElementById('behaviorList').innerHTML = behaviors.map(b => `
                 <button onclick="addPoint(${idx}, '${b.name}', ${b.point})" 
-                    class="p-4 rounded-2xl font-bold text-white transition active:scale-90 ${b.point >= 0 ? 'bg-indigo-400' : 'bg-rose-400'}">
+                    class="p-4 rounded-2xl font-bold text-white active:scale-90 transition ${b.point >= 0 ? 'bg-indigo-400' : 'bg-rose-400'}">
                     ${b.name} (${b.point > 0 ? '+' : ''}${b.point})
                 </button>
             `).join('');
@@ -224,7 +217,7 @@
             if(!db[currentClass][sIdx].logs) db[currentClass][sIdx].logs = [];
             db[currentClass][sIdx].logs.push({ name: bName, point: pt, time: new Date().toLocaleString() });
             saveLocal(); renderClassroom(); closeModal('scoreModal');
-            showToast(`${db[currentClass][sIdx].name} ${bName} ${pt > 0 ? '+' : ''}${pt}`);
+            showToast(`${db[currentClass][sIdx].name} ${pt > 0 ? '+' : ''}${pt}`);
         }
 
         function askAdminPassword() {
@@ -236,15 +229,29 @@
         function addStudent() {
             const name = prompt("學生姓名:");
             if(name) {
+                // 自動隨機分配動物圖示
                 const icon = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
                 db[currentClass].push({name, logs: [], icon});
                 saveLocal(); renderClassroom();
             }
         }
 
+        function editStudent(i) {
+            const s = db[currentClass][i];
+            const newName = prompt("修改姓名:", s.name);
+            if(newName) s.name = newName;
+            const newIcon = prompt("輸入新圖示 (Emoji):", s.icon);
+            if(newIcon) s.icon = newIcon;
+            saveLocal(); renderClassroom();
+        }
+
         function addClass() {
-            const name = prompt("新班級名稱:");
+            const name = prompt("班級名稱:");
             if(name && !db[name]) { db[name] = []; saveLocal(); renderHub(); }
+        }
+
+        function deleteClass(name) {
+            if(confirm(`確定刪除 ${name} 班？`)) { delete db[name]; saveLocal(); renderHub(); }
         }
 
         function saveLocal() {
@@ -257,7 +264,22 @@
         function showToast(msg) {
             const t = document.getElementById('toast');
             t.innerText = msg; t.style.display = 'block';
-            setTimeout(() => t.style.display = 'none', 3000);
+            setTimeout(() => t.style.display = 'none', 2500);
+        }
+
+        function openBehaviorSettings() { renderBHManager(); openModal('behaviorModal'); }
+        function renderBHManager() {
+            document.getElementById('bhManagerList').innerHTML = behaviors.map((b, i) => `
+                <div class="flex justify-between items-center bg-slate-50 p-3 rounded-xl mb-1">
+                    <span class="text-sm font-bold">${b.name} (${b.point})</span>
+                    <button onclick="behaviors.splice(${i}, 1); saveLocal(); renderBHManager();" class="text-red-400">✕</button>
+                </div>
+            `).join('');
+        }
+        function addNewBH() {
+            const n = document.getElementById('newBHName').value.trim();
+            const p = parseInt(document.getElementById('newBHPoint').value);
+            if(n && !isNaN(p)) { behaviors.push({name: n, point: p}); saveLocal(); renderBHManager(); }
         }
     </script>
 </body>
