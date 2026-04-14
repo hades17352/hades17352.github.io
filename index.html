@@ -9,6 +9,9 @@
     <style>
         body { font-family: 'Nunito', 'Noto Sans TC', sans-serif; background: #f8fafc; min-height: 100vh; overflow: hidden; }
         .bubble-card { backdrop-filter: blur(8px); border-radius: 2rem; border: 1px solid rgba(255, 255, 255, 0.5); transition: 0.3s; }
+        .bubble-pink { background: #fee2e2; } .bubble-blue { background: #e0f2fe; }
+        .bubble-green { background: #dcfce7; } .bubble-purple { background: #f3e8ff; }
+        .bubble-orange { background: #ffedd5; }
         .student-card { transition: 0.2s; cursor: pointer; border-radius: 1.25rem; background: white; border: 1px solid #f1f5f9; }
         .student-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px -5px rgba(0,0,0,0.1); }
         .modal { transition: opacity 0.25s ease; pointer-events: none; opacity: 0; }
@@ -18,9 +21,9 @@
 <body>
     <script>
         // ==========================================
-        // 1. 設定區：請務必填入您的 GAS 網址
+        // 設定區：請填入您的 GAS 部署網址
         // ==========================================
-        const API_URL = "https://script.google.com/macros/s/AKfycbzJGTyhl6HqxiBsvIUJoScierNaKeIH_acWb59FQYoQov5vRN-1-OuyaLNfF66tHLU/exec"; 
+        const API_URL = "您的新部屬網址"; 
 
         let db = {};
         let behaviors = [
@@ -35,16 +38,13 @@
 
         // --- 核心同步引擎 ---
         async function saveToCloud() {
-            if (!API_URL || API_URL === "" || API_URL.includes("您的")) return;
-            
-            // 容量防禦：傳輸前縮減筆數
+            if (!API_URL || API_URL.includes("您的")) return;
             const dbClone = JSON.parse(JSON.stringify(db));
             for (let cls in dbClone) {
                 dbClone[cls].forEach(s => {
                     if (s.logs && s.logs.length > 30) s.logs = s.logs.slice(-20);
                 });
             }
-
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
@@ -52,22 +52,19 @@
                 });
                 const res = await response.json();
                 if (res.status === 'success') showToast("✅ 雲端同步成功");
-            } catch (e) {
-                showToast("❌ 同步失敗");
-            }
+            } catch (e) { console.error(e); }
         }
 
         async function loadFromCloud() {
-            if (!API_URL || API_URL === "" || API_URL.includes("您的")) return;
+            if (!API_URL || API_URL.includes("您的")) return;
             try {
                 const response = await fetch(API_URL);
                 const data = await response.json();
-                if (data.db && Object.keys(data.db).length > 0) db = data.db;
+                if (data.db) db = data.db;
                 if (data.behaviors && data.behaviors.length > 0) behaviors = data.behaviors;
                 renderClassList();
                 showToast("✅ 資料載入成功");
             } catch (e) {
-                showToast("⚠️ 使用本地存檔");
                 const local = localStorage.getItem('classDB');
                 if (local) db = JSON.parse(local);
                 renderClassList();
@@ -76,51 +73,42 @@
 
         function saveDB() {
             localStorage.setItem('classDB', JSON.stringify(db));
-            saveToCloud(); 
+            saveToCloud();
         }
 
-        // --- 介面邏輯 ---
-        function showToast(msg) {
-            const t = document.getElementById('toast');
-            t.innerText = msg;
-            t.classList.remove('opacity-0');
-            setTimeout(() => t.classList.add('opacity-0'), 3000);
-        }
-
-        function renderClassList() {
-            const container = document.getElementById('classList');
-            container.innerHTML = Object.keys(db).map(name => `
-                <div class="relative group">
-                    <button onclick="selectClass('${name}')" class="w-full bubble-card bg-white p-6 text-xl font-black text-slate-700 hover:scale-105 shadow-sm">
-                        ${name}
-                    </button>
-                    ${isTeacherMode ? `<button onclick="deleteClass('${name}')" class="absolute -top-2 -right-2 bg-red-400 text-white w-8 h-8 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">✕</button>` : ''}
-                </div>
-            `).join('') + (isTeacherMode ? `
-                <button onclick="addClass()" class="bubble-card border-2 border-dashed border-slate-200 p-6 text-slate-400 hover:border-blue-400 hover:text-blue-400 transition-all font-bold">
-                    + 新增班級
-                </button>` : '');
-        }
-
-        // 修正後的建立班級函式
+        // --- 修正：管理員建立班級功能 ---
         function addClass() {
+            if (!isTeacherMode) {
+                showToast("🔒 請先開啟管理員模式");
+                return;
+            }
             const n = prompt("請輸入班級名稱 (例如: 101):");
             if (n && n.trim() !== "") {
                 const className = n.trim();
-                if (db[className]) return showToast("❌ 班級已重複");
-                db[className] = []; // 初始化空陣列
-                saveDB();           // 儲存並觸發雲端同步
-                renderClassList();  // 立即更新 UI
+                if (db[className]) return showToast("❌ 班級已存在");
+                db[className] = []; // 初始化學生陣列
+                saveDB();           // 儲存並同步到 GAS 分頁
+                renderClassList();  // 重新渲染列表
                 showToast(`✅ 已建立班級 ${className}`);
             }
         }
 
-        function deleteClass(name) {
-            if (confirm(`確定要刪除 ${name} 班嗎？`)) {
-                delete db[name];
-                saveDB();
-                renderClassList();
-            }
+        function renderClassList() {
+            const container = document.getElementById('classList');
+            const colors = ['bubble-pink', 'bubble-blue', 'bubble-green', 'bubble-purple', 'bubble-orange'];
+            
+            container.innerHTML = Object.keys(db).map((name, i) => `
+                <div class="relative group">
+                    <button onclick="selectClass('${name}')" class="w-full bubble-card ${colors[i % colors.length]} p-8 text-2xl font-black text-slate-700 hover:scale-105 shadow-sm">
+                        ${name}
+                    </button>
+                    ${isTeacherMode ? `<button onclick="deleteClass('${name}')" class="absolute -top-2 -right-2 bg-red-400 text-white w-8 h-8 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">✕</button>` : ''}
+                </div>
+            `).join('') + `
+                <button onclick="addClass()" class="bubble-card border-2 border-dashed border-slate-200 p-8 text-slate-400 hover:border-blue-400 hover:text-blue-400 transition-all font-bold">
+                    + 新增班級
+                </button>
+            `;
         }
 
         function selectClass(name) {
@@ -137,16 +125,15 @@
             const container = document.getElementById('studentGrid');
             container.innerHTML = db[currentClass].map((s, i) => `
                 <div onclick="openScoreModal(${i})" class="student-card p-4 text-center shadow-sm relative group">
-                    <div class="text-4xl mb-2">${s.icon || '👤'}</div>
+                    <div class="text-5xl mb-2">${s.icon || '🦊'}</div>
                     <div class="font-black text-slate-700 truncate">${s.name}</div>
                     <div class="mt-2 inline-block px-4 py-1 bg-blue-50 text-blue-600 rounded-full font-black text-sm">
                         ${s.totalPoint || 0}
                     </div>
-                    ${isTeacherMode ? `<button onclick="event.stopPropagation(); deleteStudent(${i})" class="absolute top-1 right-1 text-red-300 opacity-0 group-hover:opacity-100">✕</button>` : ''}
                 </div>
             `).join('') + (isTeacherMode ? `
-                <button onclick="addStudent()" class="border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center text-slate-300 hover:bg-white h-32">
-                    + 新增學生
+                <button onclick="addStudent()" class="border-2 border-dashed border-slate-200 rounded-3xl flex items-center justify-center text-slate-300 hover:bg-white h-40 text-4xl">
+                    +
                 </button>` : '');
         }
 
@@ -159,37 +146,26 @@
             }
         }
 
-        function deleteStudent(idx) {
-            if(confirm("確定刪除該學生？")) {
-                db[currentClass].splice(idx, 1);
-                saveDB();
-                renderClassroom();
-            }
-        }
-
-        function addLog(bName, p) {
-            const s = db[currentClass][currentStudentIdx];
-            s.totalPoint = (s.totalPoint || 0) + p;
-            s.logs.push({ name: bName, point: p, time: new Date().toLocaleString() });
-            closeModal('scoreModal');
-            saveDB();
-            renderClassroom();
-        }
-
         function toggleTeacherMode() {
             const pw = prompt("管理員密碼：");
             if(pw === "admin") {
                 isTeacherMode = !isTeacherMode;
-                showToast(isTeacherMode ? "🔓 管理員模式已開啟" : "🔒 已切換為學生模式");
+                showToast(isTeacherMode ? "🔓 管理員模式" : "🔒 學生模式");
                 renderClassList();
                 if(currentClass) renderClassroom();
-            } else {
-                showToast("❌ 密碼錯誤");
             }
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.classList.remove('opacity-0');
+            setTimeout(() => t.classList.add('opacity-0'), 3000);
         }
 
         function openModal(id) { document.getElementById(id).classList.add('active'); }
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
         function openScoreModal(idx) {
             currentStudentIdx = idx;
             document.getElementById('modalStudentName').innerText = db[currentClass][idx].name;
@@ -202,6 +178,23 @@
             openModal('scoreModal');
         }
 
+        function addLog(bName, p) {
+            const s = db[currentClass][currentStudentIdx];
+            s.totalPoint = (s.totalPoint || 0) + p;
+            s.logs.push({ name: bName, point: p, time: new Date().toLocaleString() });
+            closeModal('scoreModal');
+            saveDB();
+            renderClassroom();
+        }
+
+        function deleteClass(name) {
+            if (confirm(`確定要刪除 ${name} 班嗎？`)) {
+                delete db[name];
+                saveDB();
+                renderClassList();
+            }
+        }
+
         window.onload = loadFromCloud;
     </script>
 
@@ -210,21 +203,21 @@
     <div class="p-6 max-w-6xl mx-auto h-screen flex flex-col">
         <div id="mainMenu" class="flex-1 flex flex-col justify-center">
             <div class="flex justify-between items-center mb-10">
-                <h1 class="text-4xl font-black text-slate-800">Class Manager Cloud</h1>
+                <h1 class="text-4xl font-black text-slate-800">Class Manager <span class="text-blue-500">Cloud</span></h1>
                 <button onclick="toggleTeacherMode()" class="bg-white p-4 rounded-3xl shadow-sm text-slate-400">⚙️</button>
             </div>
-            <div id="classList" class="grid grid-cols-2 md:grid-cols-4 gap-6 overflow-y-auto pr-2"></div>
+            <div id="classList" class="grid grid-cols-1 md:grid-cols-3 gap-6 overflow-y-auto pr-2"></div>
         </div>
 
         <div id="classroom" class="hidden flex-1 flex flex-col">
             <div class="flex items-center justify-between mb-8">
                 <div class="flex items-center gap-4">
-                    <button onclick="location.reload()" class="bg-white p-4 rounded-3xl shadow-sm hover:bg-slate-50">🏠</button>
+                    <button onclick="location.reload()" class="bg-white p-4 rounded-3xl shadow-sm">🏠</button>
                     <h2 id="displayClassName" class="text-3xl font-black text-slate-800"></h2>
                 </div>
                 <button onclick="saveToCloud()" class="bg-blue-500 text-white px-8 py-4 rounded-3xl font-black shadow-lg shadow-blue-200">☁ 同步</button>
             </div>
-            <div id="studentGrid" class="flex-1 grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-4 overflow-y-auto pb-10"></div>
+            <div id="studentGrid" class="flex-1 grid grid-cols-2 md:grid-cols-5 lg:grid-cols-6 gap-4 overflow-y-auto pb-10"></div>
         </div>
     </div>
 
