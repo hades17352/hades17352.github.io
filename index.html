@@ -212,7 +212,21 @@
         }
 
         const saveDB = () => saveToCloud();
-        const saveBehaviors = () => saveToCloud();
+        // 替換原本的 saveBehaviors 定義
+async function saveBehaviors() {
+    showToast("⏳ 正在儲存項目設定...");
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({ behaviors: behaviors }) // 關鍵：明確傳送 behaviors 陣列
+        });
+        const result = await response.json();
+        showToast("✅ 設定已儲存至雲端");
+    } catch (e) {
+        showToast("❌ 儲存失敗");
+        console.error("儲存設定失敗:", e);
+    }
+}
 
         // UI 助手
         const openModal = (id) => { document.getElementById(id).classList.replace('hidden', 'flex'); };
